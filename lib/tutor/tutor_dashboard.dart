@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/dashboard_service.dart';
+import '../services/notification_api_service.dart';
 import 'student_category_screen.dart';
 import 'my_bids_screen.dart';
 import 'course_category_screen.dart';
@@ -16,6 +17,7 @@ import '../services/connection_service.dart';
 import '../config/api_config.dart';
 import '../utils/status_bar_config.dart';
 import 'edit_profile_screen.dart';
+import 'notifications_screen.dart';
 
 class CourseColors {
   static const List<Color> colors = [
@@ -1270,14 +1272,7 @@ class _TopProfileRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationsScreen())),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: const BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
-              child: const Icon(Icons.notifications_none, color: Colors.white, size: 22),
-            ),
-          ),
+          const _NotificationBell(),
         ],
       ),
     );
@@ -1324,6 +1319,89 @@ class _ActivityCenterRow extends StatelessWidget {
   }
 }
 
+// ============================================================
+// NOTIFICATION BELL WITH UNREAD BADGE
+// ============================================================
+class _NotificationBell extends StatefulWidget {
+  const _NotificationBell();
+
+  @override
+  State<_NotificationBell> createState() => _NotificationBellState();
+}
+
+class _NotificationBellState extends State<_NotificationBell> {
+  int _unread = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('userId') ?? 0;
+    if (userId == 0) return;
+    try {
+      final count = await NotificationApiService.getUnreadCount(userId);
+      if (mounted) setState(() => _unread = count);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const NotificationsScreen()),
+        );
+        // ✅ Refresh badge after returning from notifications screen
+        _refresh();
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: const BoxDecoration(
+              color: Colors.white12,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.notifications_none,
+              color: Colors.white,
+              size: 22,
+            ),
+          ),
+          if (_unread > 0)
+            Positioned(
+              top: -2,
+              right: -2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  _unread > 99 ? '99+' : '$_unread',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ActIcon extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1334,6 +1412,8 @@ class _ActIcon extends StatelessWidget {
     required this.label,
     this.onTap,
   });
+
+
 
   @override
   Widget build(BuildContext context) {

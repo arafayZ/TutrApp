@@ -131,6 +131,13 @@ class ApiConfig {
   static const String registerDeviceToken = '/api/notifications/register-token';
   static const String removeDeviceToken = '/api/notifications/remove-token';
 
+  // In-app notification history
+  static const String getUserNotifications = '/api/notifications/user';       // + /{userId}
+  static const String getNotifUnreadCount = '/api/notifications/user';        // + /{userId}/unread-count
+  static const String markNotifRead = '/api/notifications';                   // + /{id}/read?userId=X
+  static const String markAllNotifRead = '/api/notifications/user';           // + /{userId}/read-all
+  static const String deleteNotif = '/api/notifications';                     // + /{id}?userId=X
+
   // ============ HELPER METHODS ============
   static String getFullUrl(String endpoint) {
     return '$baseUrl$endpoint';

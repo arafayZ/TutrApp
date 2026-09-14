@@ -7,6 +7,7 @@ import '../services/favorite_refresh_service.dart';
 import '../services/connection_refresh_service.dart';
 import '../services/dashboard_service.dart';
 import '../services/course_service.dart';
+import '../services/notification_api_service.dart';
 import '../tutor/inbox_screen.dart';
 import '../widgets/student_bottom_nav.dart';
 import 'search_screen.dart';
@@ -24,6 +25,7 @@ import '../utils/status_bar_config.dart';
 import 'course_details_screen.dart';
 import 'tutor_profile_screen.dart';
 import '../config/api_config.dart';
+import 'notification_screen.dart';
 
 // --- Helper function to get category badge colors ---
 Map<String, Color> getCategoryBadgeColors(String level) {
@@ -542,12 +544,6 @@ class _HeaderSection extends StatelessWidget {
     this.profileImage = '',
   });
 
-  void _navigateToNotificationScreen(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const NotificationScreen()),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -581,10 +577,7 @@ class _HeaderSection extends StatelessWidget {
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const SearchScreen())),
               ),
               const SizedBox(width: 12),
-              _HeaderActionBtn(
-                icon: Icons.notifications_none_outlined,
-                onTap: () => _navigateToNotificationScreen(context),
-              ),
+              const _StudentNotificationBell(),
             ],
           ),
           const SizedBox(height: 20),
@@ -741,6 +734,89 @@ class _CategorySelector extends StatelessWidget {
   }
 }
 
+// ============================================================
+// STUDENT NOTIFICATION BELL (with unread badge)
+// ============================================================
+class _StudentNotificationBell extends StatefulWidget {
+  const _StudentNotificationBell();
+
+  @override
+  State<_StudentNotificationBell> createState() =>
+      _StudentNotificationBellState();
+}
+
+class _StudentNotificationBellState extends State<_StudentNotificationBell> {
+  int _unread = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('userId') ?? 0;
+    if (userId == 0) return;
+    try {
+      final count = await NotificationApiService.getUnreadCount(userId);
+      if (mounted) setState(() => _unread = count);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const NotificationScreen()),
+        );
+        _refresh();
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.notifications_none_outlined,
+              color: Colors.white,
+              size: 21,
+            ),
+          ),
+          if (_unread > 0)
+            Positioned(
+              top: -2,
+              right: -2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  _unread > 99 ? '99+' : '$_unread',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TopTutorsList extends StatelessWidget {
   final List<Tutor> tutors;
   const _TopTutorsList({required this.tutors});
@@ -834,6 +910,8 @@ class _RecommendedCoursesList extends StatefulWidget {
   State<_RecommendedCoursesList> createState() => _RecommendedCoursesListState();
 }
 
+
+
 class _RecommendedCoursesListState extends State<_RecommendedCoursesList> {
   late List<Course> courses;
 
@@ -843,6 +921,7 @@ class _RecommendedCoursesListState extends State<_RecommendedCoursesList> {
     courses = widget.courses.map((c) => c).toList();
   }
 
+
   @override
   void didUpdateWidget(covariant _RecommendedCoursesList oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -850,6 +929,8 @@ class _RecommendedCoursesListState extends State<_RecommendedCoursesList> {
       courses = widget.courses.map((c) => c).toList();
     }
   }
+
+
 
   @override
   Widget build(BuildContext context) {
