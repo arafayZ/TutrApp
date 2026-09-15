@@ -70,12 +70,15 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
   bool _isSelectionMode = false;
   final Set<int> _selectedMessageIds = {};
 
+  // Highlight state (for tap-to-scroll on reply)
+  int? _highlightedMessageId;
+
   final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    // ✅ Black status bar always
+    // Black status bar always
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.black,
@@ -98,9 +101,9 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
 
     _recipientId = widget.tutorUserId ?? widget.tutorId;
 
-    print('🔍 Student Chat Init:');
-    print('   Sender (Student) User ID: $_senderId');
-    print('   Recipient (Tutor) User ID: $_recipientId');
+    debugPrint('Student Chat Init:');
+    debugPrint('   Sender (Student) User ID: $_senderId');
+    debugPrint('   Recipient (Tutor) User ID: $_recipientId');
 
     await _getOrCreateChatRoom();
     await _loadMessages();
@@ -144,7 +147,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         }
       }
     } catch (e) {
-      print('❌ Error getting chat room: $e');
+      debugPrint('Error getting chat room: $e');
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -171,15 +174,15 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
       });
       _scrollToBottom();
 
-      // ✅ Mark as read (fixes unread badge when opened via notification)
+      // Mark as read (fixes unread badge when opened via notification)
       await _markRoomAsRead();
     } catch (e) {
-      print('Error loading messages: $e');
+      debugPrint('Error loading messages: $e');
       setState(() => _isLoading = false);
     }
   }
 
-  // ✅ Marks current room as read + refreshes global badge
+  // Marks current room as read + refreshes global badge
   Future<void> _markRoomAsRead() async {
     try {
       await ChatService.markAllAsRead(_chatRoomId, _senderId);
@@ -188,9 +191,9 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
       UnreadCountService().updateUnreadCount(newCount);
       await NotificationService.instance.updateBadge(newCount);
 
-      print('✅ Marked room $_chatRoomId as read — unread now $newCount');
+      debugPrint('Marked room $_chatRoomId as read - unread now $newCount');
     } catch (e) {
-      print('❌ markAsRead failed: $e');
+      debugPrint('markAsRead failed: $e');
     }
   }
 
@@ -247,7 +250,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
 
       _scrollToBottom();
     } catch (e) {
-      print('Error sending message: $e');
+      debugPrint('Error sending message: $e');
       setState(() => _isSending = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to send message'), backgroundColor: Colors.red),
@@ -272,7 +275,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
           chatRoomId: _chatRoomId,
           senderId: _senderId,
           recipientId: _recipientId,
-          content: '🎵 Audio message',
+          content: 'Audio message',
           audioUrl: audioUrl,
           audioDuration: duration,
           replyToMessageId: _replyingTo?.id,
@@ -296,7 +299,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         _scrollToBottom();
       }
     } catch (e) {
-      print('❌ Error sending audio: $e');
+      debugPrint('Error sending audio: $e');
       setState(() => _isSending = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -353,7 +356,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
       if (files.isEmpty) return;
       setState(() => _pendingFiles = files);
     } catch (e) {
-      print('❌ Document pick error: $e');
+      debugPrint('Document pick error: $e');
     }
   }
 
@@ -388,7 +391,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
       if (files.isEmpty) return;
       setState(() => _pendingFiles = files);
     } catch (e) {
-      print('❌ Gallery pick error: $e');
+      debugPrint('Gallery pick error: $e');
     }
   }
 
@@ -421,7 +424,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         ];
       });
     } catch (e) {
-      print('❌ Camera pick error: $e');
+      debugPrint('Camera pick error: $e');
     }
   }
 
@@ -442,7 +445,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
             chatRoomId: _chatRoomId,
             senderId: _senderId,
             recipientId: _recipientId,
-            content: '📎 ${uploadData['fileName']}',
+            content: uploadData['fileName'],
             fileUrl: uploadData['fileUrl'],
             fileName: uploadData['fileName'],
             fileSize: uploadData['fileSize'],
@@ -474,7 +477,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
 
       _scrollToBottom();
     } catch (e) {
-      print('❌ File send error: $e');
+      debugPrint('File send error: $e');
       setState(() => _isUploadingFile = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -611,7 +614,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         );
       }
     } catch (e) {
-      print('Error deleting: $e');
+      debugPrint('Error deleting: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -680,7 +683,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         ),
       );
     } catch (e) {
-      print('Error deleting all messages: $e');
+      debugPrint('Error deleting all messages: $e');
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -705,6 +708,35 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         );
       }
     });
+  }
+
+  // Scroll to a specific message by ID + briefly highlight it
+  Future<void> _scrollToMessage(int? messageId) async {
+    if (messageId == null) return;
+
+    final index = _messages.indexWhere((m) => m.id == messageId);
+    if (index < 0) {
+      debugPrint('Message $messageId not in current list');
+      return;
+    }
+
+    final estimatedOffset = index * 80.0;
+    final maxExtent = _scrollController.hasClients
+        ? _scrollController.position.maxScrollExtent
+        : 0.0;
+    final target = estimatedOffset.clamp(0.0, maxExtent);
+
+    await _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+    );
+
+    setState(() => _highlightedMessageId = messageId);
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (mounted) {
+      setState(() => _highlightedMessageId = null);
+    }
   }
 
   String _formatMessageTime(DateTime time) {
@@ -755,7 +787,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         backgroundColor: const Color(0xFFF8F9FB),
         body: Column(
           children: [
-            // ✅ Black status bar background behind header
+            // Black status bar background behind header
             Container(
               color: Colors.black,
               child: SafeArea(
@@ -787,11 +819,17 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
                   final message = _messages[index];
                   final bool isMe = message.senderId == _senderId;
                   final bool isSelected = _selectedMessageIds.contains(message.id);
+                  final bool isHighlighted = message.id == _highlightedMessageId;
 
                   return GestureDetector(
                     onLongPress: () => _onMessageLongPress(message),
                     onTap: () => _onMessageTap(message),
-                    child: _buildMessageBubble(message, isMe, isSelected),
+                    child: _buildMessageBubble(
+                      message,
+                      isMe,
+                      isSelected,
+                      isHighlighted,
+                    ),
                   );
                 },
               ),
@@ -803,7 +841,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
     );
   }
 
-  // HEADER — normal or selection mode
+  // HEADER - normal or selection mode
   Widget _buildHeader(String? userImageUrl) {
     if (_isSelectionMode) {
       final count = _selectedMessageIds.length;
@@ -916,7 +954,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
             ),
           ),
 
-          // ✅ NEW white professional dropdown
+          // White professional dropdown
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'delete_all') {
@@ -960,8 +998,13 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
     );
   }
 
-  // MESSAGE BUBBLE with reply preview + selection highlight
-  Widget _buildMessageBubble(Message message, bool isMe, bool isSelected) {
+  // MESSAGE BUBBLE with reply preview + selection + highlight
+  Widget _buildMessageBubble(
+      Message message,
+      bool isMe,
+      bool isSelected,
+      bool isHighlighted,
+      ) {
     final bool isAudio = message.audioUrl != null && message.audioUrl!.isNotEmpty;
 
     final bool isImage = message.fileUrl != null &&
@@ -982,7 +1025,9 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
     return Container(
       color: isSelected
           ? Colors.black.withOpacity(0.08)
-          : Colors.transparent,
+          : (isHighlighted
+          ? Colors.yellow.withOpacity(0.25)
+          : Colors.transparent),
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       child: Row(
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -1031,44 +1076,48 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (hasReply)
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          margin: const EdgeInsets.only(bottom: 6),
-                          decoration: BoxDecoration(
-                            color: isMe
-                                ? Colors.white.withOpacity(0.15)
-                                : Colors.black.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border(
-                              left: BorderSide(
-                                color: isMe ? Colors.white : Colors.blue,
-                                width: 3,
+                      // Tap the reply preview to scroll to the original message
+                        GestureDetector(
+                          onTap: () => _scrollToMessage(message.replyToMessageId),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            margin: const EdgeInsets.only(bottom: 6),
+                            decoration: BoxDecoration(
+                              color: isMe
+                                  ? Colors.white.withOpacity(0.15)
+                                  : Colors.black.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border(
+                                left: BorderSide(
+                                  color: isMe ? Colors.white : Colors.blue,
+                                  width: 3,
+                                ),
                               ),
                             ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                message.replyToSenderName ?? 'Unknown',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: isMe ? Colors.white : Colors.blue,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  message.replyToSenderName ?? 'Unknown',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isMe ? Colors.white : Colors.blue,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                message.replyToContent ?? '',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: isMe ? Colors.white70 : Colors.black54,
+                                const SizedBox(height: 2),
+                                Text(
+                                  message.replyToContent ?? '',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isMe ? Colors.white70 : Colors.black54,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       if (isAudio)

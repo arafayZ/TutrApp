@@ -126,6 +126,11 @@ class ApiConfig {
   static const String uploadAudio = '/api/chat/upload/audio';
   static const String uploadFile = '/api/chat/upload/file';
 
+  // ============ ACCOUNT STATUS APIS ============
+  static const String getAccountStatus = '/api/account';           // + /{userId}/status
+  static const String deactivateTutor = '/api/account/tutor';      // + /{tutorId}/deactivate
+  static const String reactivateTutor = '/api/account/tutor';      // + /{tutorId}/reactivate
+
 
   // ============ NOTIFICATION APIS ============
   static const String registerDeviceToken = '/api/notifications/register-token';

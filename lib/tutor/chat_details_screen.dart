@@ -69,6 +69,9 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
   bool _isSelectionMode = false;
   final Set<int> _selectedMessageIds = {};
 
+  // ✅ Highlight state (for tap-to-scroll on reply)
+  int? _highlightedMessageId;
+
   final ImagePicker _imagePicker = ImagePicker();
 
   @override
@@ -160,7 +163,7 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
       });
       _scrollToBottom();
 
-      // ✅ Mark as read (fixes unread badge when opened via notification)
+      // Mark as read (fixes unread badge when opened via notification)
       await _markRoomAsRead();
     } catch (e) {
       print('Error loading messages: $e');
@@ -532,12 +535,10 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
   Future<void> _forwardSelectedMessages() async {
     if (_selectedMessageIds.isEmpty) return;
 
-    // Get all selected messages
     final selectedMessages = _messages
         .where((m) => _selectedMessageIds.contains(m.id))
         .toList();
 
-    // Open picker with the list of messages
     final success = await ForwardPickerSheet.show(context, selectedMessages);
 
     if (success == true && mounted) {
@@ -695,6 +696,37 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
     });
   }
 
+  // ✅ Scroll to a specific message by ID + briefly highlight it
+  Future<void> _scrollToMessage(int? messageId) async {
+    if (messageId == null) return;
+
+    final index = _messages.indexWhere((m) => m.id == messageId);
+    if (index < 0) {
+      debugPrint('⚠️ Message $messageId not in current list');
+      return;
+    }
+
+    // Estimate offset: each bubble ~80px tall on average
+    final estimatedOffset = index * 80.0;
+    final maxExtent = _scrollController.hasClients
+        ? _scrollController.position.maxScrollExtent
+        : 0.0;
+    final target = estimatedOffset.clamp(0.0, maxExtent);
+
+    await _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+    );
+
+    // Brief highlight
+    setState(() => _highlightedMessageId = messageId);
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (mounted) {
+      setState(() => _highlightedMessageId = null);
+    }
+  }
+
   String _formatMessageTime(DateTime time) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -761,11 +793,17 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
                   final message = _messages[index];
                   final bool isMe = message.senderId == _senderId;
                   final bool isSelected = _selectedMessageIds.contains(message.id);
+                  final bool isHighlighted = message.id == _highlightedMessageId;
 
                   return GestureDetector(
                     onLongPress: () => _onMessageLongPress(message),
                     onTap: () => _onMessageTap(message),
-                    child: _buildMessageBubble(message, isMe, isSelected),
+                    child: _buildMessageBubble(
+                      message,
+                      isMe,
+                      isSelected,
+                      isHighlighted,
+                    ),
                   );
                 },
               ),
@@ -890,7 +928,6 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
             ),
           ),
 
-          // ✅ NEW white professional dropdown
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'delete_all') {
@@ -934,8 +971,13 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
     );
   }
 
-  // MESSAGE BUBBLE with selection highlight
-  Widget _buildMessageBubble(Message message, bool isMe, bool isSelected) {
+  // MESSAGE BUBBLE with selection highlight + reply-tap-to-scroll + highlighted message
+  Widget _buildMessageBubble(
+      Message message,
+      bool isMe,
+      bool isSelected,
+      bool isHighlighted,
+      ) {
     final bool isAudio = message.audioUrl != null && message.audioUrl!.isNotEmpty;
 
     final bool isImage = message.fileUrl != null &&
@@ -956,7 +998,9 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
     return Container(
       color: isSelected
           ? Colors.black.withOpacity(0.08)
-          : Colors.transparent,
+          : (isHighlighted
+          ? Colors.yellow.withOpacity(0.25)
+          : Colors.transparent),
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       child: Row(
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -1005,44 +1049,48 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (hasReply)
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          margin: const EdgeInsets.only(bottom: 6),
-                          decoration: BoxDecoration(
-                            color: isMe
-                                ? Colors.white.withOpacity(0.15)
-                                : Colors.black.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border(
-                              left: BorderSide(
-                                color: isMe ? Colors.white : Colors.blue,
-                                width: 3,
+                      // ✅ Tap the reply preview → scroll to the original message
+                        GestureDetector(
+                          onTap: () => _scrollToMessage(message.replyToMessageId),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            margin: const EdgeInsets.only(bottom: 6),
+                            decoration: BoxDecoration(
+                              color: isMe
+                                  ? Colors.white.withOpacity(0.15)
+                                  : Colors.black.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border(
+                                left: BorderSide(
+                                  color: isMe ? Colors.white : Colors.blue,
+                                  width: 3,
+                                ),
                               ),
                             ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                message.replyToSenderName ?? 'Unknown',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: isMe ? Colors.white : Colors.blue,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  message.replyToSenderName ?? 'Unknown',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isMe ? Colors.white : Colors.blue,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                message.replyToContent ?? '',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: isMe ? Colors.white70 : Colors.black54,
+                                const SizedBox(height: 2),
+                                Text(
+                                  message.replyToContent ?? '',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isMe ? Colors.white70 : Colors.black54,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       if (isAudio)

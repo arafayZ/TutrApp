@@ -9,6 +9,7 @@ import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../config/api_config.dart';
 import '../utils/status_bar_config.dart';
+import '../services/account_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -23,6 +24,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? profileImageUrl;
   int profileId = 0;
   bool isLoading = true;
+  int userId = 0;
+  String accountStatus = 'ACTIVE';        // 'ACTIVE' or 'INACTIVE'
+  bool _isTogglingStatus = false;
 
   // Store the original image URL without timestamp
   String? _originalImageUrl;
@@ -46,6 +50,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       profileId = prefs.getInt('profileId') ?? 0;
+      userId = prefs.getInt('userId') ?? 0;
 
       print('Loading profile for ID: $profileId');
 
@@ -62,6 +67,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _displayImageUrl = _originalImageUrl;
           isLoading = false;
         });
+
+        //  Fetch account status
+        try {
+          final status = await AccountService.getAccountStatus(userId);
+          if (mounted) {
+            setState(() => accountStatus = status);
+          }
+        } catch (e) {
+          print('Failed to load account status: $e');
+        }
 
         print('Profile loaded - Name: $userName');
         print('Image URL: $_originalImageUrl');
@@ -114,11 +129,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => isLoading = true);
 
     try {
-      // ✅ Remove FCM token so this device stops receiving pushes
+      //  Remove FCM token so this device stops receiving pushes
       try {
         await NotificationService.instance.removeToken();
       } catch (e) {
-        debugPrint('⚠️ Token removal failed: $e');
+        debugPrint(' Token removal failed: $e');
       }
       await AuthService.logout();
 
@@ -152,6 +167,133 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: const Text("OK", style: TextStyle(color: Colors.black)),
             ),
           ],
+        ),
+      );
+    }
+  }
+
+  // ============================================================
+// ACCOUNT ACTIVATION / DEACTIVATION
+// ============================================================
+
+  bool get _isDeactivated => accountStatus.toUpperCase() == 'INACTIVE';
+
+  Future<void> _handleToggleStatus() async {
+    final bool isDeactivating = !_isDeactivated;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          isDeactivating ? "Deactivate Account?" : "Reactivate Account?",
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          isDeactivating
+              ? "Your account will be hidden from students. "
+              "You won't be able to receive new requests or bids. "
+              "Existing confirmed connections must be ended first.\n\n"
+              "Are you sure?"
+              : "Your account will become active again. "
+              "Students will be able to see your courses and connect with you.\n\n"
+              "Are you sure?",
+          style: const TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              isDeactivating ? "Deactivate" : "Reactivate",
+              style: TextStyle(
+                color: isDeactivating ? Colors.red : Colors.green,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isTogglingStatus = true);
+
+    try {
+      final result = isDeactivating
+          ? await AccountService.deactivateTutor(profileId)
+          : await AccountService.reactivateTutor(profileId);
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        // Update local state
+        setState(() {
+          accountStatus = isDeactivating ? 'INACTIVE' : 'ACTIVE';
+          _isTogglingStatus = false;
+        });
+
+        // Save to prefs for other screens
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('accountStatus', accountStatus);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isDeactivating
+                  ? "Account deactivated successfully"
+                  : "Account reactivated successfully",
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        // Show backend error (e.g., "You have active connections")
+        setState(() => _isTogglingStatus = false);
+
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.red, size: 26),
+                SizedBox(width: 10),
+                Text("Unable to Complete",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              ],
+            ),
+            content: Text(
+              result['error'] ?? 'Something went wrong. Please try again.',
+              style: const TextStyle(fontSize: 14, height: 1.5),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text(
+                  "OK",
+                  style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isTogglingStatus = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed: ${e.toString().replaceFirst('Exception: ', '')}'),
+          backgroundColor: Colors.red,
         ),
       );
     }
@@ -341,6 +483,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             );
                           },
                         ),
+                        if (_isTogglingStatus)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Center(
+                              child: SizedBox(
+                                width: 24, height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          )
+                        else
+                          _buildProfileOption(
+                            _isDeactivated
+                                ? Icons.check_circle_outline
+                                : Icons.pause_circle_outline,
+                            _isDeactivated ? "Reactivate Account" : "Deactivate Account",
+                            onTap: _handleToggleStatus,
+                          ),
                         _buildProfileOption(
                           Icons.logout,
                           "Logout",
