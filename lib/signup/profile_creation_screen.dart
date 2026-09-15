@@ -8,6 +8,7 @@ import '../config/api_config.dart';
 import 'login_screen.dart';
 import 'tutor_verification_screen.dart';
 import '../services/auth_service.dart';
+import '../widgets/registration_deadline_banner.dart';
 
 // Custom TextInputFormatter to handle emoji character counting properly
 class EmojiLimitingTextInputFormatter extends TextInputFormatter {
@@ -44,10 +45,13 @@ class EmojiLimitingTextInputFormatter extends TextInputFormatter {
 class ProfileCreationScreen extends StatefulWidget {
   final String role;
   final int userId;
+  final DateTime? createdAt;
+
   const ProfileCreationScreen({
     super.key,
     required this.role,
     required this.userId,
+    this.createdAt,
   });
 
   @override
@@ -78,6 +82,16 @@ class _ProfileCreationScreenState extends State<ProfileCreationScreen> {
   void initState() {
     super.initState();
     _checkExistingProfile();
+
+    //  Show the registration deadline popup once
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.createdAt != null) {
+        RegistrationDeadlinePopup.show(
+          context,
+          createdAt: widget.createdAt,
+        );
+      }
+    });
 
     // Add listener for headline controller to update counter
     _headlineController.addListener(() {
@@ -333,7 +347,10 @@ class _ProfileCreationScreenState extends State<ProfileCreationScreen> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => TutorVerificationScreen(userId: widget.userId),
+          builder: (context) => TutorVerificationScreen(
+            userId: widget.userId,
+            createdAt: widget.createdAt,
+          ),
         ),
       );
 

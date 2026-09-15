@@ -2,17 +2,20 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../services/auth_service.dart';
 import 'profile_creation_screen.dart';
+import '../widgets/registration_deadline_banner.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   final String email;
   final String role;
   final int? userId;
+  final DateTime? createdAt;
 
   const EmailVerificationScreen({
     super.key,
     required this.email,
     required this.role,
     this.userId,
+    this.createdAt,
   });
 
   @override
@@ -33,6 +36,16 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   void initState() {
     super.initState();
     _startTimer();
+
+    //  Show the registration deadline popup once
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.createdAt != null) {
+        RegistrationDeadlinePopup.show(
+          context,
+          createdAt: widget.createdAt,
+        );
+      }
+    });
     // Show success message when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -135,6 +148,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
           builder: (context) => ProfileCreationScreen(
             role: widget.role,
             userId: userData['id'],
+            createdAt: widget.createdAt,
           ),
         ),
       );

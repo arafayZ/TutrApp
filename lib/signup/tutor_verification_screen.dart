@@ -5,10 +5,17 @@ import 'package:file_picker/file_picker.dart';
 import 'login_screen.dart';
 import 'profile_creation_screen.dart';
 import '../services/auth_service.dart';
+import '../widgets/registration_deadline_banner.dart';
 
 class TutorVerificationScreen extends StatefulWidget {
   final int userId;
-  const TutorVerificationScreen({super.key, required this.userId});
+  final DateTime? createdAt;
+
+  const TutorVerificationScreen({
+    super.key,
+    required this.userId,
+    this.createdAt,
+  });
 
   @override
   State<TutorVerificationScreen> createState() => _TutorVerificationScreenState();
@@ -21,6 +28,21 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
   File? _degreeFile;
   bool _showErrors = false;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    //  Show the registration deadline popup once
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.createdAt != null) {
+        RegistrationDeadlinePopup.show(
+          context,
+          createdAt: widget.createdAt,
+        );
+      }
+    });
+  }
 
   Future<void> _pickFile(String type) async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -205,6 +227,7 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                               builder: (context) => ProfileCreationScreen(
                                 role: 'TUTOR',
                                 userId: widget.userId,
+                                createdAt: widget.createdAt, // 👈 pass back so it stays consistent
                               ),
                             ),
                           );
@@ -225,6 +248,7 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 40),
+
                       const Text(
                         "Verify Your Identity",
                         style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),

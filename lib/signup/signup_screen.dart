@@ -1,10 +1,30 @@
 import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'email_verfication_screen.dart';
 import 'login_screen.dart';
 import '../services/auth_service.dart';
+
+/// Blocks paste in a TextField by rejecting any change that adds
+/// more than one character at a time (typing adds 1, paste adds many).
+/// Works reliably on Android and iOS.
+class NoPasteTextInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue,
+      TextEditingValue newValue,
+      ) {
+    final delta = newValue.text.length - oldValue.text.length;
+    // Allow deletions and single-character typing
+    if (delta <= 1) {
+      return newValue;
+    }
+    // Block: more than one character added at once = paste
+    return oldValue;
+  }
+}
 
 class SignupScreen extends StatefulWidget {
   final String role;
@@ -163,29 +183,35 @@ class _SignupScreenState extends State<SignupScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // ========== CHANGED: Use registerTemp instead of register ==========
+      // ========== Use registerTemp instead of register ==========
       final tempData = await AuthService.registerTemp(
         _emailController.text.trim(),
         _passwordController.text,
         widget.role,
       );
-      // =================================================================
+      // ==========================================================
 
       if (!mounted) return;
       setState(() => _isLoading = false);
 
-      // ========== CHANGED: Pass only email and role (no userId yet) ==========
+      //  Read createdAt from backend response
+      final DateTime? createdAt = tempData != null && tempData['createdAt'] != null
+          ? DateTime.tryParse(tempData['createdAt'].toString())
+          : DateTime.now(); // fallback if backend hasn't been redeployed yet
+
+      // ========== Pass only email and role (no userId yet) ==========
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => EmailVerificationScreen(
             email: _emailController.text.trim(),
             role: widget.role,
+            createdAt: createdAt,
             // No userId passed - user not saved in DB yet
           ),
         ),
       );
-      // ======================================================================
+      // ===============================================================
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -252,7 +278,6 @@ class _SignupScreenState extends State<SignupScreen> {
                   bottomLeft: Radius.circular(30),
                   bottomRight: Radius.circular(30)
               ),
-              // Added shadow
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.1),
@@ -358,6 +383,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     isPassword: true, controller: _confirmPasswordController,
                     obscure: _obscureConfirmPassword,
                     onToggle: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                    blockPaste: true, // ✅ Blocks paste on Confirm Password only
                   ),
 
                   const SizedBox(height: 20),
@@ -462,6 +488,7 @@ class _SignupScreenState extends State<SignupScreen> {
     bool isPassword = false,
     bool? obscure,
     VoidCallback? onToggle,
+    bool blockPaste = false,
   }) {
     TextInputType keyboardType = TextInputType.text;
     if (label.toLowerCase().contains("email")) {
@@ -472,12 +499,18 @@ class _SignupScreenState extends State<SignupScreen> {
       controller: controller,
       keyboardType: keyboardType,
       obscureText: isPassword ? (obscure ?? true) : false,
+      enableInteractiveSelection: !blockPaste, // disables long-press menu
+      inputFormatters: blockPaste
+          ? [NoPasteTextInputFormatter()] // engine-level paste block
+          : null,
       decoration: InputDecoration(
         hintText: label,
         prefixIcon: Icon(icon, color: Colors.grey),
         suffixIcon: isPassword
             ? IconButton(
-          icon: Icon((obscure ?? true) ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+          icon: Icon((obscure ?? true)
+              ? Icons.visibility_off_outlined
+              : Icons.visibility_outlined),
           onPressed: onToggle,
         )
             : null,

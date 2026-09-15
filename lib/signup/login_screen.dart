@@ -72,6 +72,11 @@ class _LoginScreenState extends State<LoginScreen> {
       // ✅ Save email for later use
       await prefs.setString('email', userData['email']);
 
+      // ✅ Save createdAt for later use in dashboards (if backend provides it)
+      if (userData['createdAt'] != null) {
+        await prefs.setString('createdAt', userData['createdAt'].toString());
+      }
+
       // ✅ Register this device for push notifications
       try {
         await NotificationService.instance.registerToken(userData['id']);
@@ -126,13 +131,20 @@ class _LoginScreenState extends State<LoginScreen> {
     // Show loading indicator while fetching user
     setState(() => _isLoading = true);
 
-    // Fetch userId and role from backend using email
+    // Fetch userId, role, AND createdAt from backend using email
     int userId = 0;
     String userRole = "";
+    DateTime? createdAt;
     try {
       final userData = await AuthService.getUserByEmail(email);
       userId = userData['id'] ?? 0;
       userRole = userData['role'] ?? "";
+
+      //  Parse createdAt from backend
+      createdAt = userData['createdAt'] != null
+          ? DateTime.tryParse(userData['createdAt'].toString())
+          : null;
+
       setState(() => _isLoading = false);
     } catch (e) {
       setState(() => _isLoading = false);
@@ -148,14 +160,22 @@ class _LoginScreenState extends State<LoginScreen> {
           title: "Complete Your Tutor Profile",
           message: errorMsg,
           buttonText: "Complete Profile",
-          destination: ProfileCreationScreen(role: 'TUTOR', userId: userId),
+          destination: ProfileCreationScreen(
+            role: 'TUTOR',
+            userId: userId,
+            createdAt: createdAt,
+          ),
         );
       } else {
         _showActionDialog(
           title: "Complete Your Student Profile",
           message: errorMsg,
           buttonText: "Complete Profile",
-          destination: ProfileCreationScreen(role: 'STUDENT', userId: userId),
+          destination: ProfileCreationScreen(
+            role: 'STUDENT',
+            userId: userId,
+            createdAt: createdAt,
+          ),
         );
       }
     }
@@ -166,7 +186,10 @@ class _LoginScreenState extends State<LoginScreen> {
           title: "Verification Required",
           message: errorMsg,
           buttonText: "Upload Documents",
-          destination: TutorVerificationScreen(userId: userId),
+          destination: TutorVerificationScreen(
+            userId: userId,
+            createdAt: createdAt, // 👈 PASS IT
+          ),
         );
       } else {
         _showErrorPopup(errorMsg);
