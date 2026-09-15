@@ -7,8 +7,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import 'chat_service.dart';
+import 'notification_api_service.dart';
 
 // ============================================================
 // BACKGROUND HANDLER — must be top-level function
@@ -30,6 +32,9 @@ class NotificationService {
 
   // Callback — main.dart sets this to handle navigation on tap
   void Function(Map<String, dynamic> data)? onNotificationTap;
+
+  // ✅ Broadcasts badge count changes to listening widgets
+  final ValueNotifier<int> badgeNotifier = ValueNotifier<int>(0);
 
   bool _initialized = false;
 
@@ -92,7 +97,7 @@ class NotificationService {
   }
 
   // ------------------------------------------------------------
-  // FOREGROUND MESSAGE → show notification manually
+  // FOREGROUND MESSAGE → show notification + refresh badge
   // ------------------------------------------------------------
   Future<void> _onForegroundMessage(RemoteMessage msg) async {
     debugPrint('📩 [FG] ${msg.notification?.title}');
@@ -133,6 +138,11 @@ class NotificationService {
     );
 
     _updateBadgeFromData(msg.data);
+
+    // ✅ Instantly refresh bell badge when a push arrives
+    Future.delayed(const Duration(milliseconds: 300), () {
+      refreshBadge();
+    });
   }
 
   // ✅ Helper — downloads image URL to a temp file, returns bitmap
@@ -186,8 +196,30 @@ class NotificationService {
   Future<void> updateBadge(int count) async {
     try {
       await AppBadgePlus.updateBadge(count);
+      // Keep the notifier in sync
+      if (badgeNotifier.value != count) {
+        badgeNotifier.value = count;
+      }
     } catch (e) {
       debugPrint('❌ Badge update error: $e');
+    }
+  }
+
+  /// ✅ Fetch fresh unread count from backend → broadcast to listeners
+  /// Call this after push arrives OR after marking as read.
+  Future<void> refreshBadge() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt('userId') ?? 0;
+      if (userId == 0) return;
+
+      final count = await NotificationApiService.getUnreadCount(userId);
+      if (badgeNotifier.value != count) {
+        badgeNotifier.value = count;
+      }
+      await AppBadgePlus.updateBadge(count);
+    } catch (e) {
+      debugPrint('❌ refreshBadge failed: $e');
     }
   }
 
@@ -208,7 +240,7 @@ class NotificationService {
         await ChatService.registerDeviceToken(userId, newToken, 'android');
       });
     } catch (e) {
-      debugPrint('❌ Token registration failed: $e');
+      debugPrint(' Token registration failed: $e');
     }
   }
 
@@ -220,8 +252,9 @@ class NotificationService {
       }
       await FirebaseMessaging.instance.deleteToken();
       await updateBadge(0);
+      badgeNotifier.value = 0;
     } catch (e) {
-      debugPrint('❌ Token removal failed: $e');
+      debugPrint(' Token removal failed: $e');
     }
   }
 }

@@ -56,7 +56,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       } catch (_) {}
     }
     if (!mounted) return;
-    await NotificationNavigator.open(context, item);
+    await NotificationNavigator.open(item);
   }
 
   Future<void> _markAllRead() async {

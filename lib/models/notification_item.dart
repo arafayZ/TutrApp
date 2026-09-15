@@ -4,6 +4,7 @@ class NotificationItem {
   final String title;
   final String body;
   final int? referenceId;
+  final int? courseId;
   final int? senderId;
   final String? senderName;
   final String? senderImage;
@@ -18,6 +19,7 @@ class NotificationItem {
     required this.title,
     required this.body,
     this.referenceId,
+    this.courseId,
     this.senderId,
     this.senderName,
     this.senderImage,
@@ -28,21 +30,27 @@ class NotificationItem {
   });
 
   factory NotificationItem.fromJson(Map<String, dynamic> json) {
+    // ✅ Try referenceId first, then chatRoomId, then connectionId
+    final resolvedRef = _parseInt(json['referenceId'])
+        ?? _parseInt(json['chatRoomId'])
+        ?? _parseInt(json['connectionId']);
+
     return NotificationItem(
-      id: json['id'] ?? 0,
-      type: json['type'] ?? 'general',
-      title: json['title'] ?? '',
-      body: json['body'] ?? '',
-      referenceId: json['referenceId'],
-      senderId: json['senderId'],
-      senderName: json['senderName'],
-      senderImage: json['senderImage'],
-      isRead: json['isRead'] ?? json['read'] ?? false,
+      id: _parseInt(json['id']) ?? 0,
+      type: json['type']?.toString() ?? 'general',
+      title: json['title']?.toString() ?? '',
+      body: json['body']?.toString() ?? '',
+      referenceId: resolvedRef,
+      courseId: _parseInt(json['courseId']),
+      senderId: _parseInt(json['senderId']),
+      senderName: json['senderName']?.toString(),
+      senderImage: json['senderImage']?.toString(),
+      isRead: json['isRead'] == true || json['read'] == true,
       createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+          ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
           : DateTime.now(),
-      dateGroup: json['dateGroup'] ?? 'Earlier',
-      timeLabel: json['timeLabel'] ?? '',
+      dateGroup: json['dateGroup']?.toString() ?? 'Earlier',
+      timeLabel: json['timeLabel']?.toString() ?? '',
     );
   }
 
@@ -53,6 +61,7 @@ class NotificationItem {
       title: title,
       body: body,
       referenceId: referenceId,
+      courseId: courseId,
       senderId: senderId,
       senderName: senderName,
       senderImage: senderImage,
@@ -61,5 +70,14 @@ class NotificationItem {
       dateGroup: dateGroup,
       timeLabel: timeLabel,
     );
+  }
+
+  /// Helper — accepts int, String, double, or null → int?
+  static int? _parseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 }

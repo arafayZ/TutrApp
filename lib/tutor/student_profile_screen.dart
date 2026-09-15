@@ -225,12 +225,43 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     int tutorId = prefs.getInt('profileId') ?? 0;
     int tutorUserId = prefs.getInt('userId') ?? 0;
 
-    // Get student info
     String studentId = widget.student.id;
+
+    // ✅ Try primary source
     int studentUserId = _studentData?['studentUserId'] ?? 0;
+
+    // ✅ Fallback: get from courses list
+    if (studentUserId == 0 && _courses.isNotEmpty) {
+      studentUserId = _courses.first['studentUserId'] ?? 0;
+    }
+
+    // ✅ Fallback: refetch fresh from API
+    if (studentUserId == 0) {
+      try {
+        final fresh = await ConnectionService.getStudentDetail(
+            int.parse(widget.student.connectionId));
+        studentUserId = fresh['studentUserId'] ?? 0;
+        print('🔍 Refetched studentUserId: $studentUserId');
+      } catch (e) {
+        print('❌ Refetch failed: $e');
+      }
+    }
+
     String displayName = _studentData?['studentName'] as String? ?? widget.student.name;
     String displayImage = _studentData?['studentImage'] as String? ?? widget.student.profilePic;
     int connectionId = int.parse(widget.student.connectionId);
+
+    print('🔍 Chat open — studentUserId: $studentUserId, connectionId: $connectionId');
+
+    if (studentUserId == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to open chat — student user ID missing'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     Navigator.push(
       context,

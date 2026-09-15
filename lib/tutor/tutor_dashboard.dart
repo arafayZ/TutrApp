@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/dashboard_service.dart';
 import '../services/notification_api_service.dart';
+import '../services/notification_service.dart';
 import 'student_category_screen.dart';
 import 'my_bids_screen.dart';
 import 'course_category_screen.dart';
@@ -1322,6 +1325,9 @@ class _ActivityCenterRow extends StatelessWidget {
 // ============================================================
 // NOTIFICATION BELL WITH UNREAD BADGE
 // ============================================================
+// ============================================================
+// NOTIFICATION BELL — LIVE + LISTENING TO PUSH UPDATES
+// ============================================================
 class _NotificationBell extends StatefulWidget {
   const _NotificationBell();
 
@@ -1329,13 +1335,45 @@ class _NotificationBell extends StatefulWidget {
   State<_NotificationBell> createState() => _NotificationBellState();
 }
 
-class _NotificationBellState extends State<_NotificationBell> {
+class _NotificationBellState extends State<_NotificationBell>
+    with WidgetsBindingObserver {
   int _unread = 0;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Initial fetch
     _refresh();
+
+    // ✅ Instant updates when a push notification arrives
+    NotificationService.instance.badgeNotifier.addListener(_onBadgeChanged);
+
+    // Backup poll every 30s (catches anything FCM missed)
+    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    NotificationService.instance.badgeNotifier.removeListener(_onBadgeChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  void _onBadgeChanged() {
+    if (!mounted) return;
+    final newCount = NotificationService.instance.badgeNotifier.value;
+    if (newCount != _unread) {
+      setState(() => _unread = newCount);
+    }
   }
 
   Future<void> _refresh() async {
@@ -1344,7 +1382,10 @@ class _NotificationBellState extends State<_NotificationBell> {
     if (userId == 0) return;
     try {
       final count = await NotificationApiService.getUnreadCount(userId);
-      if (mounted) setState(() => _unread = count);
+      if (mounted && count != _unread) {
+        setState(() => _unread = count);
+        NotificationService.instance.badgeNotifier.value = count;
+      }
     } catch (_) {}
   }
 
@@ -1356,7 +1397,6 @@ class _NotificationBellState extends State<_NotificationBell> {
           context,
           MaterialPageRoute(builder: (context) => const NotificationsScreen()),
         );
-        // ✅ Refresh badge after returning from notifications screen
         _refresh();
       },
       child: Stack(

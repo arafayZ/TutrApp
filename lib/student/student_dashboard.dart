@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +10,7 @@ import '../services/connection_refresh_service.dart';
 import '../services/dashboard_service.dart';
 import '../services/course_service.dart';
 import '../services/notification_api_service.dart';
+import '../services/notification_service.dart';
 import '../tutor/inbox_screen.dart';
 import '../widgets/student_bottom_nav.dart';
 import 'search_screen.dart';
@@ -745,13 +748,45 @@ class _StudentNotificationBell extends StatefulWidget {
       _StudentNotificationBellState();
 }
 
-class _StudentNotificationBellState extends State<_StudentNotificationBell> {
+class _StudentNotificationBellState extends State<_StudentNotificationBell>
+    with WidgetsBindingObserver {
   int _unread = 0;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Initial fetch
     _refresh();
+
+    // ✅ Listen for instant badge updates from NotificationService
+    NotificationService.instance.badgeNotifier.addListener(_onBadgeChanged);
+
+    // Backup poll every 30s
+    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    NotificationService.instance.badgeNotifier.removeListener(_onBadgeChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  void _onBadgeChanged() {
+    if (!mounted) return;
+    final newCount = NotificationService.instance.badgeNotifier.value;
+    if (newCount != _unread) {
+      setState(() => _unread = newCount);
+    }
   }
 
   Future<void> _refresh() async {
@@ -760,7 +795,10 @@ class _StudentNotificationBellState extends State<_StudentNotificationBell> {
     if (userId == 0) return;
     try {
       final count = await NotificationApiService.getUnreadCount(userId);
-      if (mounted) setState(() => _unread = count);
+      if (mounted && count != _unread) {
+        setState(() => _unread = count);
+        NotificationService.instance.badgeNotifier.value = count;
+      }
     } catch (_) {}
   }
 

@@ -1,5 +1,6 @@
 // Import Flutter material design package
 import 'package:flutter/material.dart';
+import 'package:my_first_app/services/notification_api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 
@@ -24,17 +25,18 @@ import 'tutor/notifications_screen.dart';
 import 'tutor/student_category_screen.dart';
 import 'tutor/student_details_screen.dart';
 import 'tutor/course_category_screen.dart';
-import 'signup/onboarding_screen.dart';  // ADD THIS IMPORT
+import 'signup/onboarding_screen.dart';
 
 // NEW IMPORTS for Student Management
 import 'tutor/my_students_list_screen.dart';
 import 'tutor/student_profile_screen.dart';
 
-//  Push notifications
+// Push notifications
 import 'services/notification_service.dart';
-import 'package:my_first_app/services/push_navigation_service.dart';
+import 'services/notification_navigator.dart';
+import 'models/notification_item.dart';
 
-//  Global navigator key for notification tap routing
+// Global navigator key for notification tap routing
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
@@ -46,9 +48,34 @@ Future<void> main() async {
   // Initialize notifications
   await NotificationService.instance.init();
 
-  // Register tap handler
-  NotificationService.instance.onNotificationTap =
-      PushNavigationService.handleNotificationTap;
+  // ✅ Register tap handler — routes ALL notification types via NotificationNavigator
+  NotificationService.instance.onNotificationTap = (data) async {
+    try {
+      final item = NotificationItem.fromJson(data);
+
+      // ✅ 1. Mark as read on the backend (if we have a notification ID)
+      final notificationId = int.tryParse(data['notificationId']?.toString() ?? '')
+          ?? int.tryParse(data['id']?.toString() ?? '');
+
+      if (notificationId != null && notificationId > 0) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final userId = prefs.getInt('userId') ?? 0;
+          if (userId > 0) {
+            await NotificationApiService.markAsRead(notificationId, userId);
+            await NotificationService.instance.refreshBadge();
+          }
+        } catch (e) {
+          debugPrint('⚠️ Mark as read failed: $e');
+        }
+      }
+
+      // ✅ 2. Navigate
+      NotificationNavigator.open(item);
+    } catch (e) {
+      debugPrint('❌ Notification tap error: $e');
+    }
+  };
 
   runApp(const TutrApp());
 }
@@ -123,7 +150,7 @@ class TutrApp extends StatelessWidget {
 
       routes: {
         '/login': (context) => const LoginScreen(),
-        '/onboarding': (context) => const OnboardingScreen(),  // ADD THIS ROUTE
+        '/onboarding': (context) => const OnboardingScreen(),
         '/role_selection': (context) => const RoleSelectionScreen(),
         '/tutor_dashboard': (context) => const TutorDashboard(),
         '/student_dashboard': (context) => const StudentDashboard(),
@@ -140,7 +167,6 @@ class TutrApp extends StatelessWidget {
             userId: args['userId'],
           );
         },
-        // '/my_bids': (context) => const MyBidsScreen(),
         '/student_category': (context) => const StudentCategoryScreen(),
         '/course_category': (context) => const CourseCategoryScreen(),
         '/edit_profile': (context) {
