@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../utils/api_mapper.dart';
+import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
 
 class CourseService {
   static bool get useRealApi => ApiConfig.useRealApi;
@@ -99,18 +98,16 @@ class CourseService {
   }
 
   // ============ COURSE CRUD OPERATIONS ============
-  // These methods handle creating, updating, and deleting courses
 
   static Future<Map<String, dynamic>> createCourse(Map<String, dynamic> courseData) async {
     if (useRealApi) {
       try {
         final requestBody = ApiMapper.mapCourseRequest(courseData);
 
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.createCourse)),
-          headers: {'Content-Type': 'application/json'},
           body: json.encode(requestBody),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final backendData = json.decode(response.body);
@@ -141,11 +138,10 @@ class CourseService {
       try {
         final requestBody = ApiMapper.mapCourseRequest(courseData);
 
-        final response = await http.put(
+        final response = await ApiClient.put(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.updateCourse)}/$courseId'),
-          headers: {'Content-Type': 'application/json'},
           body: json.encode(requestBody),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final backendData = json.decode(response.body);
@@ -167,10 +163,9 @@ class CourseService {
   static Future<void> deleteCourse(int courseId) async {
     if (useRealApi) {
       try {
-        final response = await http.delete(
+        final response = await ApiClient.delete(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.deleteCourse)}/$courseId'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode != 200) {
           final errorData = json.decode(response.body);
@@ -188,10 +183,9 @@ class CourseService {
   static Future<String> toggleAvailability(int courseId) async {
     if (useRealApi) {
       try {
-        final response = await http.put(
+        final response = await ApiClient.put(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.toggleAvailability)}/$courseId/toggle-availability'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return response.body;
@@ -210,15 +204,13 @@ class CourseService {
   }
 
   // ============ TUTOR COURSE APIS ============
-  // These methods fetch course data for tutor perspective
 
   static Future<List<dynamic>> getTutorCourses(int tutorProfileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorCourses)}/$tutorProfileId'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -252,10 +244,9 @@ class CourseService {
   static Future<Map<String, dynamic>> getTutorCourseDetail(int courseId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorCourseDetail)}/$courseId'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -294,10 +285,9 @@ class CourseService {
   static Future<List<dynamic>> getTutorCourseCards(int tutorProfileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorCourseCards)}/$tutorProfileId/cards'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -328,15 +318,13 @@ class CourseService {
   }
 
   // ============ STUDENT COURSE APIS ============
-  // These methods fetch course data for student perspective
 
   static Future<List<dynamic>> getAvailableCourses() async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.getAvailableCourses)),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -379,10 +367,7 @@ class CourseService {
         String queryString = queryParams.isNotEmpty ? '?${queryParams.join('&')}' : '';
         final url = ApiConfig.getFullUrl('${ApiConfig.searchCourses}$queryString');
 
-        final response = await http.get(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -414,10 +399,9 @@ class CourseService {
   static Future<List<dynamic>> getAvailableCoursesForStudent(int studentId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.getAvailableCoursesForStudent}/$studentId/available')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -439,10 +423,7 @@ class CourseService {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.getCourseForStudent}/$courseId/student?studentId=$studentId');
 
-        final response = await http.get(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> data = json.decode(response.body);
@@ -487,15 +468,13 @@ class CourseService {
   }
 
   // ============ FAVORITE OPERATIONS ============
-  // These methods handle favorite courses for students
 
   static Future<Map<String, dynamic>> addToFavorites(int studentId, int courseId) async {
     if (useRealApi) {
       try {
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.addFavorite}/$studentId/add/$courseId')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return {'success': true, 'message': 'Added to favorites'};
@@ -515,10 +494,9 @@ class CourseService {
   static Future<Map<String, dynamic>> removeFromFavorites(int studentId, int courseId) async {
     if (useRealApi) {
       try {
-        final response = await http.delete(
+        final response = await ApiClient.delete(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.removeFavorite}/$studentId/remove/$courseId')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return {'success': true, 'message': 'Removed from favorites'};
@@ -538,10 +516,9 @@ class CourseService {
   static Future<List<dynamic>> getFavorites(int studentId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.getFavorites}/$studentId')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -559,15 +536,13 @@ class CourseService {
   }
 
   // ============ TUTOR PROFILE APIS ============
-  // These methods fetch tutor profile information for students
 
   static Future<List<dynamic>> getAllTutors(int studentId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.getalltutor}/$studentId')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -587,10 +562,9 @@ class CourseService {
   static Future<Map<String, dynamic>> getTutorProfile(int studentId, int tutorId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.tutorProfileView}/$studentId/$tutorId/profile')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);

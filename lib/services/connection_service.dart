@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../utils/api_mapper.dart';
+import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
 
 class ConnectionService {
   static bool get useRealApi => ApiConfig.useRealApi;
@@ -41,15 +40,13 @@ class ConnectionService {
   }
 
   // ============ TUTOR CONNECTION APIS ============
-  // These methods handle tutor-side connection management
 
   static Future<List<Map<String, dynamic>>> getTutorConnections(int tutorProfileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorConnections)}/$tutorProfileId'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           List<dynamic> connections = json.decode(response.body);
@@ -87,10 +84,9 @@ class ConnectionService {
   static Future<List<Map<String, dynamic>>> getTutorConfirmedConnections(int tutorProfileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorConfirmedConnections)}/$tutorProfileId/confirmed'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           List<dynamic> connections = json.decode(response.body);
@@ -128,10 +124,9 @@ class ConnectionService {
   static Future<List<Map<String, dynamic>>> getPendingRequests(int tutorProfileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getPendingRequests)}/$tutorProfileId/pending'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           List<dynamic> requests = json.decode(response.body);
@@ -151,10 +146,9 @@ class ConnectionService {
   static Future<List<Map<String, dynamic>>> getNegotiations(int tutorProfileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getNegotiations)}/$tutorProfileId/negotiations'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           List<dynamic> negotiations = json.decode(response.body);
@@ -187,10 +181,9 @@ class ConnectionService {
   static Future<List<Map<String, dynamic>>> getTutorBids(int tutorProfileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorBids)}/$tutorProfileId/bids-with-cards'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           List<dynamic> bids = json.decode(response.body);
@@ -210,10 +203,9 @@ class ConnectionService {
   static Future<Map<String, dynamic>> getTutorBidForCourse(int tutorId, int courseId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorBids)}/$tutorId/course/$courseId/bids'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final List<dynamic> data = json.decode(response.body);
@@ -251,14 +243,12 @@ class ConnectionService {
       int tutorId, int courseId, int studentId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorBidForStudent)}/$tutorId/course/$courseId/student/$studentId/bid'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
-          // If response is empty list or null, return empty map
           if (data is List && data.isEmpty) {
             return {};
           }
@@ -276,8 +266,6 @@ class ConnectionService {
     }
   }
 
-
-
   static Future<Map<String, dynamic>> tutorRespond(
       int connectionId, {
         required bool accept,
@@ -290,10 +278,7 @@ class ConnectionService {
           url += '&counterOffer=$counterOffer';
         }
 
-        final response = await http.post(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.post(Uri.parse(url));
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -311,15 +296,13 @@ class ConnectionService {
   }
 
   // ============ STUDENT CONNECTION APIS ============
-  // These methods handle student-side connection management
 
   static Future<Map<String, dynamic>> getStudentDetail(int connectionId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.studentDetail)}/$connectionId'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           Map<String, dynamic> data = json.decode(response.body);
@@ -359,10 +342,9 @@ class ConnectionService {
   static Future<List<Map<String, dynamic>>> getStudentConnectionsRaw(int studentId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.getStudentConnections}/$studentId')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final List<dynamic> connections = json.decode(response.body);
@@ -382,10 +364,9 @@ class ConnectionService {
   static Future<List<Map<String, dynamic>>> getStudentConfirmedConnections(int studentId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.getStudentConfirmedConnections}/$studentId/confirmed')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final List<dynamic> connections = json.decode(response.body);
@@ -407,10 +388,7 @@ class ConnectionService {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.getStudentBids}/$studentId/course/$courseId/bids');
 
-        final response = await http.get(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           final List<dynamic> data = json.decode(response.body);
@@ -427,39 +405,6 @@ class ConnectionService {
     }
   }
 
-  // static Future<Map<String, dynamic>> getConnectionStatus(int studentId, int courseId) async {
-  //   if (useRealApi) {
-  //     try {
-  //       final url = ApiConfig.getFullUrl('${ApiConfig.getConnectionStatus}/$studentId/status/$courseId');
-  //
-  //       final response = await http.get(
-  //         Uri.parse(url),
-  //         headers: {'Content-Type': 'application/json'},
-  //       ).timeout(const Duration(seconds: 15));
-  //
-  //       if (response.statusCode == 200) {
-  //         final Map<String, dynamic> data = json.decode(response.body);
-  //         return {
-  //           'status': data['status'],
-  //           'connectionId': data['connectionId'],
-  //           'agreedPrice': data['agreedPrice'],
-  //           'originalPrice': data['originalPrice'],
-  //         };
-  //       } else if (response.statusCode == 404) {
-  //         return {'status': 'NONE', 'connectionId': null};
-  //       } else {
-  //         final errorData = response.body.isNotEmpty ? json.decode(response.body) : {};
-  //         throw Exception(_cleanErrorMessage(errorData['error'] ?? 'Failed to get connection status'));
-  //       }
-  //     } catch (e) {
-  //       return {'status': 'NONE', 'connectionId': null};
-  //     }
-  //   } else {
-  //     await Future.delayed(const Duration(milliseconds: 500));
-  //     return {'status': 'NONE', 'connectionId': null};
-  //   }
-  // }
-
   static Future<Map<String, dynamic>> requestConnection({
     required int courseId,
     required int studentId,
@@ -471,11 +416,10 @@ class ConnectionService {
           'studentId': studentId,
         };
 
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.requestConnection)),
-          headers: {'Content-Type': 'application/json'},
           body: json.encode(requestBody),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> data = json.decode(response.body);
@@ -514,11 +458,10 @@ class ConnectionService {
           'suggestedPrice': suggestedPrice,
         };
 
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.requestConnection)),
-          headers: {'Content-Type': 'application/json'},
           body: json.encode(requestBody),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> data = json.decode(response.body);
@@ -556,10 +499,7 @@ class ConnectionService {
           url += '&newOffer=$newOffer';
         }
 
-        final response = await http.post(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.post(Uri.parse(url));
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> data = json.decode(response.body);
@@ -584,10 +524,9 @@ class ConnectionService {
   static Future<void> studentCancelPending(int connectionId) async {
     if (useRealApi) {
       try {
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.studentCancel}/$connectionId/student-cancel')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode != 200) {
           final errorData = response.body.isNotEmpty ? json.decode(response.body) : {};
@@ -604,10 +543,9 @@ class ConnectionService {
   static Future<void> studentDisconnect(int connectionId, {String disconnectedBy = "STUDENT"}) async {
     if (useRealApi) {
       try {
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.disconnect}/$connectionId/disconnect?disconnectedBy=$disconnectedBy')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode != 200) {
           final errorData = json.decode(response.body);
@@ -626,10 +564,9 @@ class ConnectionService {
   static Future<void> disconnect(int connectionId, {String disconnectedBy = "TUTOR"}) async {
     if (useRealApi) {
       try {
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.disconnect)}/$connectionId/disconnect?disconnectedBy=$disconnectedBy'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return;
@@ -650,10 +587,9 @@ class ConnectionService {
   static Future<List<Map<String, dynamic>>> searchStudents(int tutorProfileId, String query) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.searchStudents)}/$tutorProfileId/search?query=$query'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           List<dynamic> students = json.decode(response.body);
@@ -700,10 +636,7 @@ class ConnectionService {
           url += '?${queryParams.join('&')}';
         }
 
-        final response = await http.get(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           List<dynamic> students = json.decode(response.body);
@@ -739,10 +672,9 @@ class ConnectionService {
       ) async {
     if (useRealApi) {
       try {
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.tutorRespond)}/$connectionId/tutor-respond?accept=false&counterOffer=$offerPrice'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> data = json.decode(response.body);

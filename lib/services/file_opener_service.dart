@@ -5,6 +5,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/api_config.dart';
+import 'api_headers.dart';
 
 class FileOpenerService {
   /// ✅ Open a file from a URL
@@ -33,7 +34,8 @@ class FileOpenerService {
 
       // Download if not exists
       if (!await localFile.exists()) {
-        final response = await http.get(Uri.parse(fullUrl));
+        final response = await http.get(Uri.parse(fullUrl),
+          headers: await ApiHeaders.json(),);
 
         if (response.statusCode != 200) {
           throw Exception('Failed to download file');

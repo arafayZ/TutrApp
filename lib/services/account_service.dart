@@ -1,7 +1,6 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
 
 class AccountService {
   // ------------------------------------------------------------
@@ -9,10 +8,9 @@ class AccountService {
   // ------------------------------------------------------------
   static Future<String> getAccountStatus(int userId) async {
     try {
-      final response = await http.get(
+      final response = await ApiClient.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getAccountStatus}/$userId/status'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 15));
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -30,10 +28,9 @@ class AccountService {
   // ------------------------------------------------------------
   static Future<Map<String, dynamic>> deactivateTutor(int tutorId) async {
     try {
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.deactivateTutor}/$tutorId/deactivate'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 15));
+      );
 
       final data = json.decode(response.body);
 
@@ -61,10 +58,9 @@ class AccountService {
   // ------------------------------------------------------------
   static Future<Map<String, dynamic>> reactivateTutor(int tutorId) async {
     try {
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.reactivateTutor}/$tutorId/reactivate'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 15));
+      );
 
       final data = json.decode(response.body);
 

@@ -1,7 +1,6 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
 
 class ReportBlockService {
   static bool get useRealApi => ApiConfig.useRealApi;
@@ -32,15 +31,6 @@ class ReportBlockService {
     return 'Something went wrong';
   }
 
-  static Future<Map<String, String>> _getHeaders() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('auth_token');
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
-  }
-
   static String _mapReportReason(String reason) {
     switch (reason.toLowerCase()) {
       case 'spam or fake account':
@@ -61,16 +51,12 @@ class ReportBlockService {
   }
 
   // ============ BLOCKED TUTORS MANAGEMENT ============
-  // These methods handle retrieving, checking, blocking, and unblocking tutors
 
   static Future<List<Map<String, dynamic>>> getBlockedTutors(int studentId) async {
     if (useRealApi) {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.getBlockedList}/$studentId/list');
-        final response = await http.get(
-          Uri.parse(url),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           final List<dynamic> data = json.decode(response.body);
@@ -105,10 +91,7 @@ class ReportBlockService {
     if (useRealApi) {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.checkBlocked}/$studentId/check/$tutorId');
-        final response = await http.get(
-          Uri.parse(url),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           final responseBody = response.body.trim();
@@ -140,10 +123,7 @@ class ReportBlockService {
     if (useRealApi) {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.blockTutor}/$studentId/block/$tutorId');
-        final response = await http.post(
-          Uri.parse(url),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.post(Uri.parse(url));
 
         if (response.statusCode == 200) {
           final responseBody = response.body.trim();
@@ -179,10 +159,7 @@ class ReportBlockService {
     if (useRealApi) {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.unblockTutor}/$studentId/unblock/$tutorId');
-        final response = await http.delete(
-          Uri.parse(url),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.delete(Uri.parse(url));
 
         if (response.statusCode == 200) {
           final responseBody = response.body.trim();
@@ -215,7 +192,6 @@ class ReportBlockService {
   }
 
   // ============ REPORT TUTOR ============
-  // Submits a report against a tutor with a reason
 
   static Future<Map<String, dynamic>> reportTutor({
     required int studentId,
@@ -234,11 +210,10 @@ class ReportBlockService {
           'description': description ?? '',
         };
 
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.reportTutor)),
-          headers: await _getHeaders(),
           body: json.encode(requestBody),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final responseBody = response.body.trim();

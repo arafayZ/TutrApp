@@ -11,6 +11,7 @@ import '../services/dashboard_service.dart';
 import '../services/course_service.dart';
 import '../services/notification_api_service.dart';
 import '../services/notification_service.dart';
+import '../services/session_expired_exception.dart';
 import '../tutor/inbox_screen.dart';
 import '../widgets/student_bottom_nav.dart';
 import 'search_screen.dart';
@@ -198,6 +199,10 @@ class _StudentDashboardState extends State<StudentDashboard> with WidgetsBinding
       } else {
         _showEmptyState();
       }
+    } on SessionExpiredException {
+      //  Session expired — forceLogout() already cleared state and
+      // navigated to login. Do nothing here.
+      return;
     } catch (e) {
       print('Error loading dashboard: $e');
       _showEmptyState();
@@ -325,6 +330,9 @@ class _StudentDashboardState extends State<StudentDashboard> with WidgetsBinding
         );
       }
       FavoriteRefreshService().notifyRefresh();
+    } on SessionExpiredException {
+      // Silently ignore — forceLogout already handled it
+      return;
     } catch (e) {
       setState(() {
         _recommendedCourses[index].isFavorited = !newFavStatus;

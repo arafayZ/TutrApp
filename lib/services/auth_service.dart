@@ -5,9 +5,35 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../utils/api_mapper.dart';
 import 'package:http_parser/http_parser.dart';
+import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
 
 class AuthService {
   static bool get useRealApi => ApiConfig.useRealApi;
+
+  // ============================================================
+  // ==================== TOKEN STORAGE =========================
+  // ============================================================
+
+  static const String _tokenKey = 'auth_token';
+
+  /// Save JWT token after successful login
+  static Future<void> _saveToken(String? token) async {
+    if (token == null || token.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenKey, token);
+  }
+
+  /// Read saved token (null if not logged in)
+  static Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_tokenKey);
+  }
+
+  /// Remove token on logout
+  static Future<void> _clearToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+  }
 
   // ============================================================
   // ==================== HELPER METHODS ========================
@@ -64,15 +90,6 @@ class AuthService {
     return cleaned.isEmpty ? 'Something went wrong' : cleaned;
   }
 
-  static Future<Map<String, String>> _getHeaders() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('auth_token');
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
-  }
-
   // ============================================================
   // ==================== AUTHENTICATION APIS ===================
   // ============================================================
@@ -80,15 +97,20 @@ class AuthService {
   static Future<Map<String, dynamic>> login(String email, String password) async {
     if (useRealApi) {
       try {
+        // 🔓 PUBLIC endpoint — raw http, no JWT needed
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.login)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({'email': email, 'password': password}),
         ).timeout(const Duration(seconds: 15));
 
         if (response.statusCode == 200) {
           final backendData = json.decode(response.body);
           final mappedData = ApiMapper.mapLoginResponse(backendData);
+
+          // ✅ Save JWT token
+          await _saveToken(backendData['token']);
+
           SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setInt('userId', mappedData['id']);
           await prefs.setInt('profileId', mappedData['profileId'] ?? 0);
@@ -108,6 +130,7 @@ class AuthService {
       if (email.isEmpty || password.isEmpty) {
         throw Exception('Please enter email and password');
       }
+      await _saveToken('dummy-token-for-testing');
       if (email.contains('tutor')) {
         return {
           'id': 1,
@@ -138,9 +161,10 @@ class AuthService {
     if (useRealApi) {
       try {
         final requestBody = ApiMapper.mapRegisterRequest(email, password, role);
+        // 🔓 PUBLIC endpoint
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.register)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode(requestBody),
         ).timeout(const Duration(seconds: 15));
 
@@ -172,9 +196,16 @@ class AuthService {
 
     if (useRealApi) {
       try {
+        // 🔒 Authenticated — use ApiClient (adds JWT)
+        // But we don't want forceLogout to trigger on 401 during logout,
+        // so this is a rare case where we skip the 401 check.
+        final token = await getToken();
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.logout)),
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            if (token != null) 'Authorization': 'Bearer $token',
+          },
         ).timeout(const Duration(seconds: 15));
 
         if (response.statusCode != 200) {
@@ -188,24 +219,26 @@ class AuthService {
       await Future.delayed(const Duration(seconds: 1));
     }
 
-    // Clear only login data
+    await _clearToken();
+
     await prefs.remove('userId');
     await prefs.remove('profileId');
     await prefs.remove('role');
+    await prefs.remove('userRole');
     await prefs.remove('accountStatus');
     await prefs.remove('registrationStep');
     await prefs.remove('email');
 
-    // Restore onboarding flag
     await prefs.setBool('hasSeenOnboarding', hasSeenOnboarding);
   }
 
   static Future<Map<String, dynamic>> getUserByEmail(String email) async {
     if (useRealApi) {
       try {
+        // 🔓 PUBLIC — used during login error flow before token exists
         final response = await http.get(
           Uri.parse('${ApiConfig.baseUrl}/api/auth/user?email=$email'),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
         ).timeout(const Duration(seconds: 15));
 
         if (response.statusCode == 200) {
@@ -235,9 +268,10 @@ class AuthService {
   static Future<Map<String, dynamic>> registerTemp(String email, String password, String role) async {
     if (useRealApi) {
       try {
+        // 🔓 PUBLIC
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.registerTemp)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({
             'email': email,
             'password': password,
@@ -259,6 +293,7 @@ class AuthService {
       return {
         'tempEmail': email,
         'role': role,
+        'createdAt': DateTime.now().toIso8601String(),
         'message': 'OTP sent to your email'
       };
     }
@@ -267,9 +302,10 @@ class AuthService {
   static Future<Map<String, dynamic>> verifyAndSave(String email, String otpCode) async {
     if (useRealApi) {
       try {
+        // 🔓 PUBLIC
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.verifyAndSave)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({
             'email': email,
             'otpCode': otpCode,
@@ -304,7 +340,7 @@ class AuthService {
       try {
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.sendOtp)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({'email': email}),
         ).timeout(const Duration(seconds: 15));
 
@@ -328,7 +364,7 @@ class AuthService {
       try {
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.verifyOtp)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({'email': email, 'otpCode': otpCode}),
         ).timeout(const Duration(seconds: 15));
 
@@ -356,7 +392,7 @@ class AuthService {
       try {
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.resendOtp)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({'email': email}),
         ).timeout(const Duration(seconds: 15));
 
@@ -380,7 +416,7 @@ class AuthService {
       try {
         final response = await http.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.checkVerification}/$email')),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
         ).timeout(const Duration(seconds: 15));
 
         if (response.statusCode == 200) {
@@ -407,7 +443,7 @@ class AuthService {
       try {
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.forgotPassword)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({'email': email}),
         ).timeout(const Duration(seconds: 15));
 
@@ -434,7 +470,7 @@ class AuthService {
       try {
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.verifyResetOtp)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({'email': email, 'otpCode': otpCode}),
         ).timeout(const Duration(seconds: 15));
 
@@ -462,7 +498,7 @@ class AuthService {
       try {
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.resetPassword)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({
             'email': email,
             'otpCode': otpCode,
@@ -494,7 +530,7 @@ class AuthService {
       try {
         final response = await http.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.resendForgotOtp)),
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiClient.publicJsonHeaders(),
           body: json.encode({'email': email}),
         ).timeout(const Duration(seconds: 15));
 
@@ -525,16 +561,16 @@ class AuthService {
   }) async {
     if (useRealApi) {
       try {
-        final response = await http.post(
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.changePassword)),
-          headers: {'Content-Type': 'application/json'},
           body: json.encode({
             'userId': userId,
             'currentPassword': currentPassword,
             'newPassword': newPassword,
             'confirmPassword': confirmPassword,
           }),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return {'message': 'Password changed successfully'};
@@ -570,9 +606,9 @@ class AuthService {
     if (useRealApi) {
       try {
         final requestBody = ApiMapper.mapTutorProfileRequest(data);
-        final response = await http.post(
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.tutorProfile)),
-          headers: {'Content-Type': 'application/json'},
           body: json.encode(requestBody),
         );
 
@@ -601,10 +637,10 @@ class AuthService {
   static Future<Map<String, dynamic>> getTutorProfile(int profileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.getTutorProfile}/$profileId')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -638,11 +674,11 @@ class AuthService {
   static Future<Map<String, dynamic>> editTutorProfile(Map<String, dynamic> data) async {
     if (useRealApi) {
       try {
-        final response = await http.put(
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.put(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.editTutorProfileJson)),
-          headers: {'Content-Type': 'application/json'},
           body: json.encode(data),
-        ).timeout(const Duration(seconds: 30));
+        );
 
         if (response.statusCode == 200) {
           if (response.body.isEmpty) {
@@ -690,11 +726,11 @@ class AuthService {
         );
         request.files.add(multipartFile);
 
-        var response = await request.send();
-        var responseData = await response.stream.bytesToString();
+        // 🔒 AUTHENTICATED — ApiClient adds JWT + handles 401/403
+        final response = await ApiClient.sendMultipart(request);
 
         if (response.statusCode == 200) {
-          return json.decode(responseData);
+          return json.decode(response.body);
         } else {
           throw Exception('Failed to upload image');
         }
@@ -718,11 +754,11 @@ class AuthService {
         request.files.add(await http.MultipartFile.fromPath('cnicImage', cnicFile.path));
         request.files.add(await http.MultipartFile.fromPath('certificateImage', certificateFile.path));
 
-        var response = await request.send();
-        var responseData = await response.stream.bytesToString();
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.sendMultipart(request);
 
         if (response.statusCode == 200) {
-          return json.decode(responseData);
+          return json.decode(response.body);
         } else {
           throw Exception('Failed to upload documents');
         }
@@ -746,9 +782,9 @@ class AuthService {
   static Future<Map<String, dynamic>> createStudentProfile(Map<String, dynamic> data) async {
     if (useRealApi) {
       try {
-        final response = await http.post(
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.studentProfile)),
-          headers: {'Content-Type': 'application/json'},
           body: json.encode(data),
         );
 
@@ -770,10 +806,10 @@ class AuthService {
   static Future<Map<String, dynamic>> getStudentProfile(int profileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.getStudentProfile}/$profileId')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -829,20 +865,16 @@ class AuthService {
           request.files.add(multipartFile);
         }
 
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        String? token = prefs.getString('auth_token');
-        request.headers['Authorization'] = 'Bearer $token';
-
-        var response = await request.send();
-        var responseData = await response.stream.bytesToString();
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.sendMultipart(request);
 
         if (response.statusCode == 200) {
-          if (responseData.isEmpty) {
+          if (response.body.isEmpty) {
             return {'message': 'Profile updated successfully'};
           }
-          return json.decode(responseData);
+          return json.decode(response.body);
         } else {
-          final errorData = responseData.isNotEmpty ? json.decode(responseData) : {};
+          final errorData = response.body.isNotEmpty ? json.decode(response.body) : {};
           throw Exception(_cleanErrorMessage(errorData['error'] ?? 'Failed to update student profile'));
         }
       } catch (e) {
@@ -857,11 +889,11 @@ class AuthService {
   static Future<Map<String, dynamic>> editStudentProfileJson(Map<String, dynamic> data) async {
     if (useRealApi) {
       try {
-        final response = await http.put(
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.put(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.editStudentProfileJson)),
-          headers: {'Content-Type': 'application/json'},
           body: json.encode(data),
-        ).timeout(const Duration(seconds: 30));
+        );
 
         if (response.statusCode == 200) {
           if (response.body.isEmpty) {
@@ -909,15 +941,11 @@ class AuthService {
         );
         request.files.add(multipartFile);
 
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        String? token = prefs.getString('auth_token');
-        request.headers['Authorization'] = 'Bearer $token';
-
-        var response = await request.send();
-        var responseData = await response.stream.bytesToString();
+        // 🔒 AUTHENTICATED
+        final response = await ApiClient.sendMultipart(request);
 
         if (response.statusCode == 200) {
-          return json.decode(responseData);
+          return json.decode(response.body);
         } else {
           throw Exception('Failed to upload student image');
         }

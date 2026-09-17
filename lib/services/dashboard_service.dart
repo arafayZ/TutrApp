@@ -1,7 +1,6 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
 
 class DashboardService {
   static bool get useRealApi => ApiConfig.useRealApi;
@@ -27,15 +26,15 @@ class DashboardService {
   static Future<Map<String, dynamic>> getTutorDashboard(int tutorId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse(ApiConfig.getFullUrl('${ApiConfig.tutorDashboard}/$tutorId')),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
         } else {
-          throw Exception('Failed to load dashboard');
+          final errorData = response.body.isNotEmpty ? json.decode(response.body) : {};
+          throw Exception(_cleanErrorMessage(errorData['error'] ?? 'Failed to load dashboard'));
         }
       } catch (e) {
         throw Exception(_cleanErrorMessage(e.toString()));
@@ -76,10 +75,7 @@ class DashboardService {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.studentDashboard}/$studentId');
 
-        final response = await http.get(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url)); // 👈 switched to ApiClient
 
         if (response.statusCode == 200) {
           return json.decode(response.body);

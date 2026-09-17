@@ -8,8 +8,8 @@ import '../tutor/bid_details_screen.dart' as tutor_bid;
 import '../student/bid_details_screen.dart' as student_bid;
 import '../tutor/course_detail_screen.dart' as tutor_course;
 import '../student/course_details_screen.dart' as student_course;
-import '../tutor/my_bids_screen.dart';
-import '../student/connection_screen.dart';
+import '../tutor/connection_screen.dart' as tutor_connection;
+import '../student/connection_screen.dart' as student_connection;
 import '../models/notification_item.dart';
 
 class NotificationNavigator {
@@ -43,7 +43,6 @@ class NotificationNavigator {
 
       case 'signup_welcome':
       case 'account_approved':
-      // ✅ No navigation for these types — just dismiss
         debugPrint('ℹ️ ${item.type} — no navigation (info only)');
         break;
 
@@ -166,11 +165,16 @@ class NotificationNavigator {
   static void _openConnections(String role) {
     if (role == 'tutor') {
       app.navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => const MyBidsScreen()),
+        MaterialPageRoute(
+          builder: (_) =>
+          const tutor_connection.ConnectionScreen(studentName: ''),
+        ),
       );
     } else {
       app.navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => const ConnectionScreen()),
+        MaterialPageRoute(
+          builder: (_) => const student_connection.ConnectionScreen(),
+        ),
       );
     }
   }

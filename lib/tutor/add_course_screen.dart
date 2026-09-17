@@ -113,8 +113,8 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
       });
     } else if (mode == "Student Home") {
       setState(() {
-        _isLocationEditable = false;
-        _locationController.text = "Student's Home";
+        _isLocationEditable = true;
+        _locationController.text = "";
       });
     } else if (mode == "Tutor Home") {
       setState(() {

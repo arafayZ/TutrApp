@@ -135,6 +135,7 @@ class ApiConfig {
   // ============ NOTIFICATION APIS ============
   static const String registerDeviceToken = '/api/notifications/register-token';
   static const String removeDeviceToken = '/api/notifications/remove-token';
+  static const String markNotifReadByRoom = '/api/notifications/room';
 
   // In-app notification history
   static const String getUserNotifications = '/api/notifications/user';       // + /{userId}

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/chat_service.dart';
+import '../services/notification_api_service.dart';
 import '../services/notification_service.dart';
 import '../services/websocket_service.dart';
 import '../services/unread_count_service.dart';
@@ -185,15 +186,22 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
   // Marks current room as read + refreshes global badge
   Future<void> _markRoomAsRead() async {
     try {
+      // 1. Mark chat messages as read
       await ChatService.markAllAsRead(_chatRoomId, _senderId);
 
+      // 2.  Mark related new_message notifications as read
+      await NotificationApiService.markRoomNotificationsRead(_chatRoomId, _senderId);
+
+      // 3.  Refresh the bell badge from notifications endpoint
+      await NotificationService.instance.refreshBadge();
+
+      // 4. Update the bottom nav chat unread count (chat messages count)
       final newCount = await ChatService.getUnreadCount(_senderId);
       UnreadCountService().updateUnreadCount(newCount);
-      await NotificationService.instance.updateBadge(newCount);
 
-      debugPrint('Marked room $_chatRoomId as read - unread now $newCount');
+      debugPrint(' Marked room $_chatRoomId as read — chat unread: $newCount');
     } catch (e) {
-      debugPrint('markAsRead failed: $e');
+      debugPrint(' markAsRead failed: $e');
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/dashboard_service.dart';
 import '../services/notification_api_service.dart';
 import '../services/notification_service.dart';
+import '../services/session_expired_exception.dart';
 import 'student_category_screen.dart';
 import 'my_bids_screen.dart';
 import 'course_category_screen.dart';
@@ -229,6 +230,10 @@ class _TutorDashboardState extends State<TutorDashboard> with WidgetsBindingObse
         _isLoading = false;
       });
 
+    } on SessionExpiredException {
+      //  Session expired — forceLogout() already cleared state and
+      // navigated to login. Do nothing here.
+      return;
     } catch (e) {
       print('Error loading dashboard: $e');
       setState(() {
@@ -263,6 +268,8 @@ class _TutorDashboardState extends State<TutorDashboard> with WidgetsBindingObse
         }
       }
       return uniqueStudentIds.length;
+    } on SessionExpiredException {
+      rethrow; //  let it bubble up to the outer catch
     } catch (e) {
       return 0;
     }

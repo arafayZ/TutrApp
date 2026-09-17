@@ -62,6 +62,13 @@ class NotificationApiService {
     ).timeout(const Duration(seconds: 10));
   }
 
+  static Future<void> markRoomNotificationsRead(int roomId, int userId) async {
+    await http.patch(
+      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.markNotifReadByRoom}/$roomId/read-all?userId=$userId'),
+      headers: await _headers(),
+    ).timeout(const Duration(seconds: 10));
+  }
+
   // ------------------------------------------------------------
   // DELETE
   // ------------------------------------------------------------

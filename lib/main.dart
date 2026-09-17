@@ -39,6 +39,44 @@ import 'models/notification_item.dart';
 // Global navigator key for notification tap routing
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// Global logout — clears session and redirects to LoginScreen.
+/// Called from any service when the backend returns 401/403.
+Future<void> forceLogout({String? reason}) async {
+  try {
+    // 1. Clear token and user data (keep onboarding flag)
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('userId');
+    await prefs.remove('profileId');
+    await prefs.remove('userRole');
+    await prefs.remove('role');
+    await prefs.remove('accountStatus');
+    await prefs.remove('registrationStep');
+    await prefs.remove('email');
+    await prefs.remove('createdAt');
+
+    // 2. Navigate to login (clear stack)
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+    );
+
+    // 3. Show a friendly message
+    final context = navigatorKey.currentContext;
+    if (context != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(reason ?? 'Session expired. Please log in again.'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  } catch (e) {
+    debugPrint(' forceLogout error: $e');
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 

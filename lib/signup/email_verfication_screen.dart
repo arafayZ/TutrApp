@@ -37,15 +37,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     super.initState();
     _startTimer();
 
-    //  Show the registration deadline popup once
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.createdAt != null) {
-        RegistrationDeadlinePopup.show(
-          context,
-          createdAt: widget.createdAt,
-        );
-      }
-    });
     // Show success message when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ScaffoldMessenger.of(context).showSnackBar(

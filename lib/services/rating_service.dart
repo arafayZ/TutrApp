@@ -1,7 +1,6 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
 
 class RatingService {
   static bool get useRealApi => ApiConfig.useRealApi;
@@ -65,25 +64,14 @@ class RatingService {
     return cleaned;
   }
 
-  static Future<Map<String, String>> _getHeaders() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('auth_token');
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
-  }
-
   // ============ TOP RATED COURSES ============
-  // Fetches top rated courses for a tutor with optional limit
 
   static Future<List<dynamic>> getTopRatedCourses(int tutorId, {int limit = 5}) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTopRatedCourses)}/$tutorId/top-courses?limit=$limit'),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -100,15 +88,13 @@ class RatingService {
   }
 
   // ============ TUTOR RATING SUMMARY ============
-  // Fetches rating summary for a tutor including average rating and distribution
 
   static Future<Map<String, dynamic>> getTutorRatingSummary(int tutorProfileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorRatingSummary)}/$tutorProfileId/summary'),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -125,15 +111,13 @@ class RatingService {
   }
 
   // ============ TUTOR FILTER OPTIONS ============
-  // Fetches available filter options for tutor ratings
 
   static Future<Map<String, dynamic>> getTutorFilterOptions(int tutorProfileId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getTutorFilterOptions)}/$tutorProfileId/filter-options'),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -150,15 +134,13 @@ class RatingService {
   }
 
   // ============ REVIEW DETAIL ============
-  // Fetches detailed information for a specific review
 
   static Future<Map<String, dynamic>> getReviewDetail(int reviewId) async {
     if (useRealApi) {
       try {
-        final response = await http.get(
+        final response = await ApiClient.get(
           Uri.parse('${ApiConfig.getFullUrl(ApiConfig.getReviewDetail)}/$reviewId'),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -175,7 +157,6 @@ class RatingService {
   }
 
   // ============ TUTOR RATING SUMMARY WITH FILTERS ============
-  // Fetches rating summary filtered by category and/or teaching mode
 
   static Future<Map<String, dynamic>> getTutorRatingSummaryWithFilters(
       int tutorProfileId, {
@@ -198,10 +179,7 @@ class RatingService {
           url += '?${queryParams.join('&')}';
         }
 
-        final response = await http.get(
-          Uri.parse(url),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -230,17 +208,13 @@ class RatingService {
   }
 
   // ============ COURSE REVIEWS ============
-  // Fetches all reviews for a specific course
 
   static Future<List<Map<String, dynamic>>> getCourseReviews(int courseId) async {
     if (useRealApi) {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.getCourseReviews}/$courseId/reviews');
 
-        final response = await http.get(
-          Uri.parse(url),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           final dynamic jsonData = json.decode(response.body);
@@ -265,17 +239,13 @@ class RatingService {
   }
 
   // ============ TOP TUTORS ============
-  // Fetches top rated tutors for student dashboard
 
   static Future<List<dynamic>> getTopTutors(int studentId) async {
     if (useRealApi) {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.topTutors}/$studentId');
 
-        final response = await http.get(
-          Uri.parse(url),
-          headers: await _getHeaders(),
-        ).timeout(const Duration(seconds: 15));
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           final List<dynamic> data = json.decode(response.body);
@@ -293,7 +263,6 @@ class RatingService {
   }
 
   // ============ SUBMIT RATING ============
-  // Submits a rating and review for a course
 
   static Future<Map<String, dynamic>> submitRating({
     required int studentId,
@@ -310,11 +279,10 @@ class RatingService {
           'review': review,
         };
 
-        final response = await http.post(
+        final response = await ApiClient.post(
           Uri.parse(ApiConfig.getFullUrl(ApiConfig.submitRating)),
-          headers: await _getHeaders(),
           body: json.encode(requestBody),
-        ).timeout(const Duration(seconds: 15));
+        );
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> data = json.decode(response.body);

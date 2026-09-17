@@ -66,7 +66,11 @@ class StudentProfileScreen extends StatefulWidget {
   final StudentDetails student;
   final Function(String) onDisconnect;
 
-  const StudentProfileScreen({super.key, required this.student, required this.onDisconnect});
+  const StudentProfileScreen({
+    super.key,
+    required this.student,
+    required this.onDisconnect,
+  });
 
   @override
   State<StudentProfileScreen> createState() => _StudentProfileScreenState();
@@ -104,13 +108,16 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       int tutorProfileId = prefs.getInt('profileId') ?? 0;
 
-      final studentData = await ConnectionService.getStudentDetail(int.parse(widget.student.connectionId));
+      final studentData = await ConnectionService.getStudentDetail(
+        int.parse(widget.student.connectionId),
+      );
 
-      List<Map<String, dynamic>> allConnections = await ConnectionService.getTutorConfirmedConnections(tutorProfileId);
+      List<Map<String, dynamic>> allConnections =
+      await ConnectionService.getTutorConfirmedConnections(tutorProfileId);
 
-      List<Map<String, dynamic>> studentCourses = allConnections.where((conn) =>
-      conn['studentId'].toString() == widget.student.id
-      ).toList();
+      List<Map<String, dynamic>> studentCourses = allConnections
+          .where((conn) => conn['studentId'].toString() == widget.student.id)
+          .toList();
 
       List<Map<String, dynamic>> courses = [];
       int courseIndex = 0;
@@ -121,8 +128,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           'courseName': conn['courseName'] ?? conn['subject'] ?? 'Course',
           'agreedPrice': conn['agreedPrice'] ?? 0,
           'originalPrice': conn['originalPrice'] ?? 0,
-          'connectionId': conn['connectionId'], // ✅ Add connectionId
-          'studentUserId': conn['studentUserId'], // ✅ Add studentUserId
+          'connectionId': conn['connectionId'],
+          'studentUserId': conn['studentUserId'],
         });
         courseIndex++;
       }
@@ -132,34 +139,116 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         _courses = courses;
         _isFetching = false;
       });
-
     } catch (e) {
       print('Error fetching student details: $e');
       setState(() => _isFetching = false);
     }
   }
 
+  // ============================================================
+  // ✅ DISCONNECT — now shows a course picker when > 1 course
+  // ============================================================
   void _showDisconnectDialog() {
+    // If no courses, nothing to disconnect
+    if (_courses.isEmpty) {
+      _showErrorDialog("No courses found for this student.");
+      return;
+    }
+
+    // Only one course — go straight to confirmation
+    if (_courses.length == 1) {
+      final course = _courses[0];
+      _confirmAndDisconnect(
+        widget.student.name,
+        course['connectionId'],
+        course['courseName'] ?? 'Course',
+      );
+      return;
+    }
+
+    // Multiple courses — show picker
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-          title: const Text("Disconnect", style: TextStyle(fontWeight: FontWeight.bold)),
-          content: Text("Are you sure you want to disconnect from ${widget.student.name}?"),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(25),
+          ),
+          title: Text(
+            "Disconnect ${widget.student.name}",
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Select which course to disconnect from:",
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              ..._courses.map((course) {
+                final String courseName = course['courseName'] ?? 'Course';
+                final int connectionId = course['connectionId'] ?? 0;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        _confirmAndDisconnect(
+                          widget.student.name,
+                          connectionId,
+                          courseName,
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 16,
+                        ),
+                        side: BorderSide(color: Colors.grey.shade300),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.book_outlined,
+                            size: 18,
+                            color: Colors.black54,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              courseName,
+                              style: const TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel", style: TextStyle(color: Colors.black54)),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await _performDisconnect();
-              },
-              child: const Text("Disconnect", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text(
+                "Cancel",
+                style: TextStyle(color: Colors.black54),
+              ),
             ),
           ],
         );
@@ -167,12 +256,50 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
-  Future<void> _performDisconnect() async {
+  Future<void> _confirmAndDisconnect(
+      String studentName,
+      int connectionId,
+      String courseName,
+      ) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text(
+          "Disconnect Student",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          "Are you sure you want to disconnect $studentName from \"$courseName\"?\n\nThis action cannot be undone.",
+          style: const TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              "Disconnect",
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => _isLoading = true);
 
     try {
       await ConnectionService.disconnect(
-        int.parse(widget.student.connectionId),
+        connectionId,
         disconnectedBy: "TUTOR",
       );
 
@@ -180,10 +307,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Student disconnected successfully"),
+          SnackBar(
+            content: Text("Disconnected from $courseName"),
             backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
+            duration: const Duration(seconds: 2),
           ),
         );
 
@@ -191,7 +318,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       }
     } catch (e) {
       setState(() => _isLoading = false);
-      _showErrorDialog("Failed to disconnect: ${e.toString().replaceFirst('Exception: ', '')}");
+      _showErrorDialog(
+        "Failed to disconnect: ${e.toString().replaceFirst('Exception: ', '')}",
+      );
     }
   }
 
@@ -219,7 +348,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     return '${ApiConfig.baseUrl}$imageUrl';
   }
 
-  // ✅ NEW: Open chat with proper parameters
+  // ✅ Open chat with proper parameters
   void _openChat() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     int tutorId = prefs.getInt('profileId') ?? 0;
@@ -227,19 +356,20 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
     String studentId = widget.student.id;
 
-    // ✅ Try primary source
+    // Try primary source
     int studentUserId = _studentData?['studentUserId'] ?? 0;
 
-    // ✅ Fallback: get from courses list
+    // Fallback: get from courses list
     if (studentUserId == 0 && _courses.isNotEmpty) {
       studentUserId = _courses.first['studentUserId'] ?? 0;
     }
 
-    // ✅ Fallback: refetch fresh from API
+    // Fallback: refetch fresh from API
     if (studentUserId == 0) {
       try {
         final fresh = await ConnectionService.getStudentDetail(
-            int.parse(widget.student.connectionId));
+          int.parse(widget.student.connectionId),
+        );
         studentUserId = fresh['studentUserId'] ?? 0;
         print('🔍 Refetched studentUserId: $studentUserId');
       } catch (e) {
@@ -247,8 +377,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       }
     }
 
-    String displayName = _studentData?['studentName'] as String? ?? widget.student.name;
-    String displayImage = _studentData?['studentImage'] as String? ?? widget.student.profilePic;
+    String displayName =
+        _studentData?['studentName'] as String? ?? widget.student.name;
+    String displayImage =
+        _studentData?['studentImage'] as String? ?? widget.student.profilePic;
     int connectionId = int.parse(widget.student.connectionId);
 
     print('🔍 Chat open — studentUserId: $studentUserId, connectionId: $connectionId');
@@ -313,12 +445,18 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       );
     }
 
-    final String displayName = _studentData?['studentName'] as String? ?? widget.student.name;
-    final String displayLocation = _studentData?['location'] as String? ?? widget.student.location;
-    final String displayPhone = _studentData?['phoneNumber'] as String? ?? widget.student.phone;
-    final String displayGender = _studentData?['gender'] as String? ?? widget.student.gender;
-    final String displayEmail = _studentData?['studentEmail'] as String? ?? widget.student.email;
-    final String displayImage = _studentData?['studentImage'] as String? ?? widget.student.profilePic;
+    final String displayName =
+        _studentData?['studentName'] as String? ?? widget.student.name;
+    final String displayLocation =
+        _studentData?['location'] as String? ?? widget.student.location;
+    final String displayPhone =
+        _studentData?['phoneNumber'] as String? ?? widget.student.phone;
+    final String displayGender =
+        _studentData?['gender'] as String? ?? widget.student.gender;
+    final String displayEmail =
+        _studentData?['studentEmail'] as String? ?? widget.student.email;
+    final String displayImage =
+        _studentData?['studentImage'] as String? ?? widget.student.profilePic;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FB),
@@ -362,8 +500,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                           ),
                           child: Column(
                             children: [
-                              Text(displayName,
-                                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                              Text(
+                                displayName,
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                               const SizedBox(height: 20),
 
                               Row(
@@ -372,9 +515,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                                   GestureDetector(
                                     onTap: () {
                                       setState(() => activeBtn = "message");
-                                      _openChat(); // ✅ Use the new method
+                                      _openChat();
                                     },
-                                    child: _buildAdaptiveButton(label: "Message", id: "message"),
+                                    child: _buildAdaptiveButton(
+                                      label: "Message",
+                                      id: "message",
+                                    ),
                                   ),
                                   const SizedBox(width: 12),
                                   GestureDetector(
@@ -382,20 +528,39 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                                       setState(() => activeBtn = "disconnect");
                                       _showDisconnectDialog();
                                     },
-                                    child: _buildAdaptiveButton(label: "Disconnect", id: "disconnect"),
+                                    child: _buildAdaptiveButton(
+                                      label: "Disconnect",
+                                      id: "disconnect",
+                                    ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 40),
 
                               _buildSectionHeader("Personal Details"),
-                              _buildDetailRow(Icons.location_on_outlined, "Location", displayLocation),
-                              _buildDetailRow(Icons.person_outline, "Gender", displayGender),
+                              _buildDetailRow(
+                                Icons.location_on_outlined,
+                                "Location",
+                                displayLocation,
+                              ),
+                              _buildDetailRow(
+                                Icons.person_outline,
+                                "Gender",
+                                displayGender,
+                              ),
                               const SizedBox(height: 35),
 
                               _buildSectionHeader("Contact Info"),
-                              _buildDetailRow(Icons.phone_android_outlined, "Phone", displayPhone),
-                              _buildDetailRow(Icons.mail_outline, "Email", displayEmail),
+                              _buildDetailRow(
+                                Icons.phone_android_outlined,
+                                "Phone",
+                                displayPhone,
+                              ),
+                              _buildDetailRow(
+                                Icons.mail_outline,
+                                "Email",
+                                displayEmail,
+                              ),
                               const SizedBox(height: 35),
 
                               _buildSectionHeader("Enrolled Courses"),
@@ -576,7 +741,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         border: isSelected ? null : Border.all(color: Colors.black12),
         borderRadius: BorderRadius.circular(30),
         boxShadow: isSelected
-            ? [BoxShadow(color: Colors.black26, blurRadius: 8, offset: const Offset(0, 4))]
+            ? [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          )
+        ]
             : null,
       ),
       child: Text(
@@ -592,7 +763,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   Widget _buildAvatar(double radius, String imgPath) {
     return Container(
       padding: const EdgeInsets.all(3),
-      decoration: const BoxDecoration(color: Colors.black, shape: BoxShape.circle),
+      decoration: const BoxDecoration(
+        color: Colors.black,
+        shape: BoxShape.circle,
+      ),
       child: CircleAvatar(
         radius: radius,
         backgroundColor: Colors.white,
@@ -636,20 +810,22 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold
-                    )
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 1),
-                Text(value,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 14,
-                        color: Colors.grey
-                    )
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
                 ),
               ],
             ),
