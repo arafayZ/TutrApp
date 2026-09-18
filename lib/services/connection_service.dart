@@ -701,4 +701,30 @@ class ConnectionService {
       return {'success': true, 'status': 'NEGOTIATING', 'message': 'Offer sent successfully'};
     }
   }
+
+  // ============================================
+//  NOTIFICATION ROUTING — check live status
+// ============================================
+  static Future<String> getLatestStatusForCourseAndStudent({
+    required int courseId,
+    required int studentId,
+  }) async {
+    try {
+      final response = await ApiClient.get(
+        Uri.parse(
+          '${ApiConfig.getFullUrl(ApiConfig.getStatusByCourseStudent)}'
+              '?courseId=$courseId&studentId=$studentId',
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return (data['status'] ?? 'NONE').toString().toUpperCase();
+      }
+      return 'NONE';
+    } catch (e) {
+      print(' getLatestStatus failed: $e');
+      return 'NONE';
+    }
+  }
 }

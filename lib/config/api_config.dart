@@ -102,6 +102,7 @@ class ApiConfig {
   static const String getTutorBids = '/api/connections/tutor'; // + /{tutorId}/course/{courseId}/bids
   static const String getTutorBidForStudent = '/api/connections/tutor'; // + /{tutorId}/course/{courseId}/student/{studentId}/bid
   static const String getStudentBids = '/api/connections/student'; // + /{studentId}/course/{courseId}/bids
+  static const String getStatusByCourseStudent = '/api/connections/status-by-course-student';
   // static const String getTutorBidsForCourse = '/api/connections/tutor';
   // static const String getConnectionStatus = '/api/connections/student'; // + /{studentId}/status/{connectionId}
 

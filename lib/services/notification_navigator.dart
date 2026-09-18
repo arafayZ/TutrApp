@@ -10,16 +10,16 @@ import '../tutor/course_detail_screen.dart' as tutor_course;
 import '../student/course_details_screen.dart' as student_course;
 import '../tutor/connection_screen.dart' as tutor_connection;
 import '../student/connection_screen.dart' as student_connection;
+import '../services/connection_service.dart';
 import '../models/notification_item.dart';
 
 class NotificationNavigator {
-  /// Entry point — works from push tap OR list tap
   static Future<void> open(NotificationItem item) async {
     final prefs = await SharedPreferences.getInstance();
     final role = (prefs.getString('role') ?? 'student').toLowerCase();
     final myUserId = prefs.getInt('userId') ?? 0;
 
-    debugPrint('🧭 Navigation — type=${item.type}, role=$role');
+    debugPrint(' Navigation — type=${item.type}, role=$role');
 
     switch (item.type) {
       case 'new_message':
@@ -38,16 +38,16 @@ class NotificationNavigator {
       case 'connection_request':
       case 'connection_counter':
       case 'connection_cancelled':
-        _openBidDetails(item, role);
+        await _openBidDetails(item, role);
         break;
 
       case 'signup_welcome':
       case 'account_approved':
-        debugPrint('ℹ️ ${item.type} — no navigation (info only)');
+        debugPrint('ℹ ${item.type} — no navigation (info only)');
         break;
 
       default:
-        debugPrint('❓ Unknown notification type: ${item.type}');
+        debugPrint(' Unknown notification type: ${item.type}');
     }
   }
 
@@ -93,14 +93,44 @@ class NotificationNavigator {
   }
 
   // ============================================================
-  // BID DETAILS
+  // BID DETAILS — check live status first
   // ============================================================
-  static void _openBidDetails(NotificationItem item, String role) {
-    if (item.courseId == null) {
-      debugPrint('❌ No courseId — cannot open bid details');
+  static Future<void> _openBidDetails(NotificationItem item, String role) async {
+    if (item.courseId == null || item.senderId == null) {
+      debugPrint(' Missing courseId or senderId — cannot route');
       return;
     }
 
+    //  Fetch the live status from the backend
+    final status = await ConnectionService.getLatestStatusForCourseAndStudent(
+      courseId: item.courseId!,
+      studentId: item.senderId!,
+    );
+
+    debugPrint(' Bid status = $status (course=${item.courseId}, student=${item.senderId})');
+
+    switch (status) {
+      case 'PENDING':
+      case 'NEGOTIATING':
+        _pushBidDetails(item, role);
+        break;
+
+      case 'CONFIRMED':
+        _openConnections(role);
+        break;
+
+      case 'REJECTED':
+      case 'CANCELLED':
+      case 'EXPIRED':
+      case 'DISCONNECTED':
+      case 'NONE':
+      default:
+        _openCourseDetails(item, role);
+        break;
+    }
+  }
+
+  static void _pushBidDetails(NotificationItem item, String role) {
     if (role == 'tutor') {
       app.navigatorKey.currentState?.push(
         MaterialPageRoute(
@@ -125,11 +155,11 @@ class NotificationNavigator {
   }
 
   // ============================================================
-  // COURSE DETAILS (disconnect / decline)
+  // COURSE DETAILS
   // ============================================================
   static void _openCourseDetails(NotificationItem item, String role) {
     if (item.courseId == null) {
-      debugPrint('❌ No courseId — cannot open course details');
+      debugPrint(' No courseId — cannot open course details');
       return;
     }
 
@@ -160,7 +190,7 @@ class NotificationNavigator {
   }
 
   // ============================================================
-  // CONNECTIONS (accepted)
+  // CONNECTIONS
   // ============================================================
   static void _openConnections(String role) {
     if (role == 'tutor') {
