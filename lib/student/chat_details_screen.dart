@@ -20,6 +20,7 @@ import '../widgets/attachment_sheet.dart';
 import '../widgets/file_preview_widget.dart';
 import '../widgets/reply_preview_widget.dart';
 import '../widgets/forward_picker_sheet.dart';
+import '../services/chat_exceptions.dart'; // 👈 NEW
 
 class StudentChatDetailsScreen extends StatefulWidget {
   final String userName;
@@ -111,6 +112,58 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
     _connectWebSocket();
   }
 
+  Future<void> _showChatUnavailableDialog({
+    required String title,
+    required String message,
+  }) async {
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.lock_outline, color: Colors.red, size: 26),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(fontSize: 14, color: Colors.grey),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop(); // close dialog
+              Navigator.of(context).pop();       // pop chat screen
+            },
+            child: const Text(
+              "OK",
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _getOrCreateChatRoom() async {
     try {
       if (widget.chatRoomId != null && widget.chatRoomId! > 0) {
@@ -118,7 +171,9 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         return;
       }
 
-      if (_senderId > 0 && widget.tutorUserId != null && widget.tutorUserId! > 0) {
+      if (_senderId > 0 &&
+          widget.tutorUserId != null &&
+          widget.tutorUserId! > 0) {
         final chatRoom = await ChatService.getOrCreateSharedChatRoom(
           _senderId,
           widget.tutorUserId!,
@@ -126,9 +181,11 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         );
         _chatRoomId = chatRoom.id;
 
-        if (chatRoom.tutorUserId != null && chatRoom.tutorUserId != _senderId) {
+        if (chatRoom.tutorUserId != null &&
+            chatRoom.tutorUserId != _senderId) {
           _recipientId = chatRoom.tutorUserId!;
-        } else if (chatRoom.studentUserId != null && chatRoom.studentUserId != _senderId) {
+        } else if (chatRoom.studentUserId != null &&
+            chatRoom.studentUserId != _senderId) {
           _recipientId = chatRoom.studentUserId!;
         }
       } else {
@@ -138,24 +195,49 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
             _senderId,
           );
           _chatRoomId = chatRoom.id;
-          if (chatRoom.tutorUserId != null && chatRoom.tutorUserId != _senderId) {
+          if (chatRoom.tutorUserId != null &&
+              chatRoom.tutorUserId != _senderId) {
             _recipientId = chatRoom.tutorUserId!;
-          } else if (chatRoom.studentUserId != null && chatRoom.studentUserId != _senderId) {
+          } else if (chatRoom.studentUserId != null &&
+              chatRoom.studentUserId != _senderId) {
             _recipientId = chatRoom.studentUserId!;
           }
         } else {
           throw Exception('No tutorUserId or connectionId provided');
         }
       }
+    } on ChatUnavailableException catch (e) {
+      // ✅ No confirmed connection → friendly dialog, no logout
+      debugPrint('Chat unavailable: ${e.message}');
+      setState(() => _isLoading = false);
+      await _showChatUnavailableDialog(
+        title: "Chat Not Available",
+        message:
+        "You need a confirmed connection with this tutor before you can "
+            "send messages. Please enroll in one of their courses first.",
+      );
+    } on ChatForbiddenException catch (e) {
+      // ✅ Permission denied → friendly dialog
+      debugPrint('Chat forbidden: ${e.message}');
+      setState(() => _isLoading = false);
+      await _showChatUnavailableDialog(
+        title: "Access Denied",
+        message: "You don't have access to this conversation.",
+      );
     } catch (e) {
       debugPrint('Error getting chat room: $e');
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to open chat: ${e.toString().replaceFirst('Exception: ', '')}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to open chat: '
+                  '${e.toString().replaceFirst('Exception: ', '')}',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -1243,15 +1325,22 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
                     : Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.attach_file, color: Colors.black),
-                      onPressed: _showAttachmentSheet,
-                      tooltip: 'Attach',
+                      icon: Icon(
+                        Icons.attach_file,
+                        color: _chatRoomId == 0 ? Colors.grey : Colors.black,
+                      ),
+                      onPressed: _chatRoomId == 0 ? null : _showAttachmentSheet,
+                      tooltip: _chatRoomId == 0 ? 'Chat not available' : 'Attach',
                     ),
                     IconButton(
-                      icon: const Icon(Icons.mic, color: Colors.black),
-                      onPressed: () {
-                        setState(() => _showAudioRecorder = true);
-                      },
+                      icon: Icon(
+                        Icons.mic,
+                        color: _chatRoomId == 0 ? Colors.grey : Colors.black,
+                      ),
+                      onPressed: _chatRoomId == 0
+                          ? null
+                          : () => setState(() => _showAudioRecorder = true),
+                      tooltip: _chatRoomId == 0 ? 'Chat not available' : 'Record audio',
                     ),
                     Expanded(
                       child: TextField(
@@ -1259,7 +1348,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
                         onSubmitted: (_) => _sendMessage(),
                         enabled: !_isSending && _chatRoomId != 0,
                         decoration: InputDecoration(
-                          hintText: _chatRoomId == 0 ? "Loading chat..." : "Type message...",
+                          hintText: _chatRoomId == 0 ? "Chat unavailable" : "Type message...",
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(vertical: 12),
                         ),

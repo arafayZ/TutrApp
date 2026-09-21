@@ -4,43 +4,90 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/chat_models.dart';
-import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
+import 'api_client.dart';
+import 'chat_exceptions.dart'; // 👈 NEW
 
 class ChatService {
-  // ✅ NEW: Get or create SHARED chat room (one per student-tutor pair)
-  static Future<ChatRoom> getOrCreateSharedChatRoom(int studentUserId, int tutorUserId, int userId) async {
+
+  // ============================================================
+  // GET OR CREATE SHARED CHAT ROOM
+  // ============================================================
+  static Future<ChatRoom> getOrCreateSharedChatRoom(
+      int studentUserId, int tutorUserId, int userId) async {
     try {
       final response = await ApiClient.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getSharedChatRoom}?studentId=$studentUserId&tutorId=$tutorUserId&userId=$userId'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getSharedChatRoom}'
+            '?studentId=$studentUserId&tutorId=$tutorUserId&userId=$userId'),
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return ChatRoom.fromJson(data);
-      } else {
-        final error = json.decode(response.body);
-        throw Exception(error['error'] ?? 'Failed to get/create shared chat room');
       }
+
+      // ✅ No confirmed connection → special exception
+      if (response.statusCode == 404) {
+        throw ChatUnavailableException(
+          'No confirmed connection with this tutor',
+        );
+      }
+
+      // ✅ Not part of chat → special exception
+      if (response.statusCode == 403) {
+        throw ChatForbiddenException('Access denied to this chat');
+      }
+
+      // Everything else → generic
+      String errorMsg = 'Failed to get/create shared chat room';
+      try {
+        final error = json.decode(response.body);
+        errorMsg = error['message'] ?? error['error'] ?? errorMsg;
+      } catch (_) {}
+      throw Exception(errorMsg);
+
+    } on ChatUnavailableException {
+      rethrow;
+    } on ChatForbiddenException {
+      rethrow;
     } catch (e) {
-      throw Exception('Error: ${e.toString().replaceFirst('Exception: ', '')}');
+      throw Exception(
+        'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+      );
     }
   }
 
-  // ✅ EXISTING: Keep for backward compatibility (connection-based)
-  static Future<ChatRoom> getOrCreateChatRoom(int connectionId, int userId) async {
+  // ============================================================
+  // EXISTING: Connection-based chat room (backward compat)
+  // ============================================================
+  static Future<ChatRoom> getOrCreateChatRoom(
+      int connectionId, int userId) async {
     try {
       final response = await ApiClient.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getChatRoom}/$connectionId?userId=$userId'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getChatRoom}'
+            '/$connectionId?userId=$userId'),
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return ChatRoom.fromJson(data);
-      } else {
-        throw Exception('Failed to get chat room');
       }
+
+      if (response.statusCode == 404) {
+        throw ChatUnavailableException('Chat not available');
+      }
+      if (response.statusCode == 403) {
+        throw ChatForbiddenException('Access denied to this chat');
+      }
+
+      throw Exception('Failed to get chat room');
+    } on ChatUnavailableException {
+      rethrow;
+    } on ChatForbiddenException {
+      rethrow;
     } catch (e) {
-      throw Exception('Error: ${e.toString().replaceFirst('Exception: ', '')}');
+      throw Exception(
+        'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+      );
     }
   }
 
@@ -61,6 +108,9 @@ class ChatService {
     }
   }
 
+  // ============================================================
+  // SEND MESSAGE
+  // ============================================================
   static Future<Message> sendMessage(SendMessageRequest request) async {
     try {
       final response = await ApiClient.post(
@@ -71,35 +121,79 @@ class ChatService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return Message.fromJson(data);
-      } else {
-        throw Exception('Failed to send message');
       }
+
+      // ✅ No confirmed connection → special exception
+      if (response.statusCode == 404) {
+        throw ChatUnavailableException(
+          'Cannot send message: no confirmed connection',
+        );
+      }
+
+      if (response.statusCode == 403) {
+        throw ChatForbiddenException('Access denied to this chat');
+      }
+
+      throw Exception('Failed to send message');
+    } on ChatUnavailableException {
+      rethrow;
+    } on ChatForbiddenException {
+      rethrow;
     } catch (e) {
-      throw Exception('Error: ${e.toString().replaceFirst('Exception: ', '')}');
+      throw Exception(
+        'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+      );
     }
   }
 
-  static Future<List<Message>> getMessages(int roomId, int userId, {int page = 0, int size = 50}) async {
+  // ============================================================
+  // GET MESSAGES
+  // ============================================================
+  static Future<List<Message>> getMessages(
+      int roomId, int userId, {int page = 0, int size = 50}) async {
     try {
       final response = await ApiClient.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getMessages}/$roomId?userId=$userId&page=$page&size=$size'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.getMessages}'
+            '/$roomId?userId=$userId&page=$page&size=$size'),
       );
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         return data.map((json) => Message.fromJson(json)).toList();
-      } else {
-        throw Exception('Failed to get messages');
       }
+
+      // ✅ No confirmed connection → special exception
+      if (response.statusCode == 404) {
+        throw ChatUnavailableException(
+          'Cannot access messages: no confirmed connection',
+        );
+      }
+
+      if (response.statusCode == 403) {
+        throw ChatForbiddenException('Access denied to this chat');
+      }
+
+      throw Exception('Failed to get messages');
+    } on ChatUnavailableException {
+      rethrow;
+    } on ChatForbiddenException {
+      rethrow;
     } catch (e) {
-      throw Exception('Error: ${e.toString().replaceFirst('Exception: ', '')}');
+      throw Exception(
+        'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+      );
     }
   }
+
+  // ============================================================
+  // REST OF FILE — UNCHANGED
+  // ============================================================
 
   static Future<void> markAllAsRead(int roomId, int userId) async {
     try {
       final response = await ApiClient.patch(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.markAsRead}/$roomId/read-all?userId=$userId'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.markAsRead}'
+            '/$roomId/read-all?userId=$userId'),
       );
 
       if (response.statusCode != 200) {
@@ -130,7 +224,8 @@ class ChatService {
   static Future<void> deleteMessage(int messageId, int userId) async {
     try {
       final response = await ApiClient.delete(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.deleteMessage}/$messageId?userId=$userId'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.deleteMessage}'
+            '/$messageId?userId=$userId'),
       );
 
       if (response.statusCode == 200 || response.statusCode == 204) {
@@ -146,7 +241,8 @@ class ChatService {
   static Future<bool> isChatAvailable(int connectionId) async {
     try {
       final response = await ApiClient.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.checkChatAvailable}/$connectionId'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.checkChatAvailable}'
+            '/$connectionId'),
       );
 
       if (response.statusCode == 200) {
@@ -161,10 +257,9 @@ class ChatService {
   }
 
   // ============================================
-  // AUDIO + FILE UPLOADS (multipart)
+  // AUDIO + FILE UPLOADS
   // ============================================
 
-  /// Upload audio file to server
   static Future<String> uploadAudio(File audioFile, int userId) async {
     try {
       print('📤 Uploading audio: ${audioFile.path}');
@@ -178,7 +273,6 @@ class ChatService {
         await http.MultipartFile.fromPath('file', audioFile.path),
       );
 
-      // ✅ ApiClient.sendMultipart adds JWT + handles 401/403
       final response = await ApiClient.sendMultipart(request);
 
       print('📡 Upload status: ${response.statusCode}');
@@ -196,7 +290,6 @@ class ChatService {
     }
   }
 
-  /// Upload file to server
   static Future<Map<String, dynamic>> uploadFile(File file, int userId) async {
     try {
       print('📤 Uploading file: ${file.path}');
@@ -210,7 +303,6 @@ class ChatService {
         await http.MultipartFile.fromPath('file', file.path),
       );
 
-      // ✅ ApiClient.sendMultipart adds JWT + handles 401/403
       final response = await ApiClient.sendMultipart(request);
 
       print('📡 Upload status: ${response.statusCode}');
@@ -236,7 +328,6 @@ class ChatService {
   // PUSH NOTIFICATIONS — Device Token
   // ============================================
 
-  /// Register this device's FCM token with the backend
   static Future<void> registerDeviceToken(
       int userId,
       String token,
@@ -260,7 +351,6 @@ class ChatService {
     }
   }
 
-  /// Remove this device's FCM token (on logout)
   static Future<void> removeDeviceToken(String token) async {
     try {
       final response = await ApiClient.post(

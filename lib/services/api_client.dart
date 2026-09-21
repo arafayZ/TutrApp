@@ -37,25 +37,42 @@ class ApiClient {
   /// Called after every authenticated response.
   /// If 401/403 → clears token, redirects to login, throws SessionExpiredException.
   static Future<http.Response> _check(http.Response response) async {
-    if (response.statusCode == 401 || response.statusCode == 403) {
+    // ---- 401: always session expired ----
+    if (response.statusCode == 401) {
       final token = await _token();
       if (token != null && token.isNotEmpty) {
-        String reason = 'Session expired. Please log in again.';
-
-        // Distinguish suspension from normal session expiry
-        try {
-          final body = jsonDecode(response.body);
-          if (body is Map && body['error'] == 'ACCOUNT_SUSPENDED') {
-            reason = 'Your account has been suspended. Please contact support at tutr.verify@gmail.com';
-          }
-        } catch (_) {
-          // Body wasn't JSON or had a different shape — keep default
-        }
-
-        await forceLogout(reason: reason);
+        await forceLogout(reason: 'Session expired. Please log in again.');
         throw SessionExpiredException();
       }
     }
+
+    // ---- 403: only force logout if it's a SUSPENSION ----
+    if (response.statusCode == 403) {
+      final token = await _token();
+      if (token != null && token.isNotEmpty) {
+        bool isSuspended = false;
+
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map && body['error'] == 'ACCOUNT_SUSPENDED') {
+            isSuspended = true;
+          }
+        } catch (_) {
+          // Not JSON → treat as a normal permission error, don't logout
+        }
+
+        if (isSuspended) {
+          await forceLogout(
+            reason: 'Your account has been suspended. '
+                'Please contact support at tutr.verify@gmail.com',
+          );
+          throw SessionExpiredException();
+        }
+        // ✅ NOT suspended → return 403 to caller (chat permission errors etc.)
+      }
+    }
+
+    // 404 / 200 / 400 / 500 → return as-is
     return response;
   }
 
@@ -153,10 +170,7 @@ class ApiClient {
     final streamed = await request.send().timeout(timeout);
     final response = await http.Response.fromStream(streamed);
 
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      await forceLogout();
-      throw SessionExpiredException();
-    }
-    return response;
+    // Use the same smart check as JSON requests
+    return _check(response);
   }
 }
