@@ -31,6 +31,38 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkLogoutReason();
+    });
+  }
+
+  Future<void> _checkLogoutReason() async {
+    final prefs = await SharedPreferences.getInstance();
+    final reason = prefs.getString('logout_reason');
+    if (reason == null || reason.isEmpty) return;
+
+    // Clear so it doesn't show again on next open
+    await prefs.remove('logout_reason');
+
+    if (!mounted) return;
+
+    // Suspension gets a proper dialog
+    if (reason.toLowerCase().contains('suspended')) {
+      _showInfoDialog(
+        title: "Account Suspended",
+        message: reason,
+        icon: Icons.block,
+        iconColor: Colors.red,
+      );
+    } else {
+      // Generic session expiry — keep as error popup
+      _showErrorPopup(reason);
+    }
+  }
+
   bool _isValidEmail(String email) {
     return RegExp(r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+").hasMatch(email);
   }
@@ -204,9 +236,12 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     }
     // Account Blocked
-    else if (lowerMsg.contains('blocked') || lowerMsg.contains('disabled')) {
+    // Account Blocked / Suspended
+    else if (lowerMsg.contains('blocked') ||
+        lowerMsg.contains('disabled') ||
+        lowerMsg.contains('suspended')) {
       _showInfoDialog(
-        title: "Account Blocked",
+        title: "Account Suspended",
         message: errorMsg,
         icon: Icons.block,
         iconColor: Colors.red,
@@ -286,9 +321,11 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             Icon(icon, color: iconColor, size: 28),
             const SizedBox(width: 10),
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+              ),
             ),
           ],
         ),
@@ -301,13 +338,14 @@ class _LoginScreenState extends State<LoginScreen> {
               message,
               style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
-            const SizedBox(height: 12),
-            Text(
-              title == "Account Under Review"
-                  ? "You will be notified once your account is approved."
-                  : "Please contact support for assistance.",
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
+            //  Only show for Account Under Review
+            if (title == "Account Under Review") ...[
+              const SizedBox(height: 12),
+              const Text(
+                "You will be notified once your account is approved.",
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ],
           ],
         ),
         actions: [

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 import 'package:my_first_app/services/session_expired_exception.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,13 +38,23 @@ class ApiClient {
   /// If 401/403 → clears token, redirects to login, throws SessionExpiredException.
   static Future<http.Response> _check(http.Response response) async {
     if (response.statusCode == 401 || response.statusCode == 403) {
-      //  Only force logout if the user WAS logged in (has a token)
       final token = await _token();
       if (token != null && token.isNotEmpty) {
-        await forceLogout();
+        String reason = 'Session expired. Please log in again.';
+
+        // Distinguish suspension from normal session expiry
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map && body['error'] == 'ACCOUNT_SUSPENDED') {
+            reason = 'Your account has been suspended. Please contact support at tutr.verify@gmail.com';
+          }
+        } catch (_) {
+          // Body wasn't JSON or had a different shape — keep default
+        }
+
+        await forceLogout(reason: reason);
         throw SessionExpiredException();
       }
-      // Not logged in → just return the response so caller can handle
     }
     return response;
   }

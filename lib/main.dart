@@ -55,25 +55,18 @@ Future<void> forceLogout({String? reason}) async {
     await prefs.remove('email');
     await prefs.remove('createdAt');
 
-    // 2. Navigate to login (clear stack)
+    // 2. Save the reason so LoginScreen can pick it up on init
+    if (reason != null) {
+      await prefs.setString('logout_reason', reason);
+    }
+
+    // 3. Navigate to login (clear stack)
     navigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
           (route) => false,
     );
-
-    // 3. Show a friendly message
-    final context = navigatorKey.currentContext;
-    if (context != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(reason ?? 'Session expired. Please log in again.'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    }
   } catch (e) {
-    debugPrint(' forceLogout error: $e');
+    debugPrint('forceLogout error: $e');
   }
 }
 

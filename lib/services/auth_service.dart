@@ -83,8 +83,9 @@ class AuthService {
       cleaned = 'Please complete your student profile first';
     } else if (cleaned.toLowerCase().contains('verify your email')) {
       cleaned = 'Please verify your email first. Check your inbox for OTP.';
+    } else if (cleaned.toLowerCase().contains('suspended')) {
+    cleaned = 'Your account has been suspended. Please contact support at tutr.verify@gmail.com';
     }
-
     cleaned = cleaned.replaceAll(RegExp(r'[^a-zA-Z0-9\s\.]'), '').trim();
 
     return cleaned.isEmpty ? 'Something went wrong' : cleaned;

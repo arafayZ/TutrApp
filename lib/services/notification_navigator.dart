@@ -28,6 +28,7 @@ class NotificationNavigator {
 
       case 'connection_disconnected':
       case 'connection_declined':
+      case 'connection_expired':
         _openCourseDetails(item, role);
         break;
 
