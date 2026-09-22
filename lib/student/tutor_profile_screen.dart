@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'course_details_screen.dart';
 import 'block_tutor_screen.dart';
@@ -49,9 +52,16 @@ class TutorProfileScreen extends StatefulWidget {
 class _TutorProfileScreenState extends State<TutorProfileScreen> {
   bool showAbout = true;
   String selectedMode = "Online";
-  String? selectedReportReason;
-  final TextEditingController _reportDescriptionController = TextEditingController();
+  final TextEditingController _reportDescriptionController =
+  TextEditingController();
   bool _isSubmittingReport = false;
+
+  // Report state
+  String? selectedReportReason;      // display name, e.g. "Harassment"
+  String? selectedReportReasonEnum;  // enum name, e.g. "HARASSMENT"
+  final List<String> _evidenceUrls = [];
+  bool _isUploadingEvidence = false;
+  String? _reportInlineError;        // shown inside the report dialog
 
   // API Data
   List<Map<String, dynamic>> allCourses = [];
@@ -97,7 +107,6 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
       _studentId = prefs.getInt('profileId') ?? 0;
       _studentUserId = prefs.getInt('userId') ?? 0;
       _tutorId = widget.tutorData['id'] ?? widget.tutorData['tutorId'] ?? 0;
-      // ✅ Don't set _tutorUserId here - it will come from API response
     });
 
     print('🔍 Student: ID=$_studentId, UserID=$_studentUserId');
@@ -111,7 +120,8 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
 
   Future<void> _checkBlockedStatus() async {
     try {
-      final isBlocked = await ReportBlockService.isTutorBlocked(_studentId, _tutorId);
+      final isBlocked =
+      await ReportBlockService.isTutorBlocked(_studentId, _tutorId);
       debugPrint('Tutor blocked status: $isBlocked');
       if (mounted) {
         setState(() {
@@ -127,12 +137,12 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await CourseService.getTutorProfile(_studentId, _tutorId);
+      final response =
+      await CourseService.getTutorProfile(_studentId, _tutorId);
 
       if (!mounted) return;
 
       _processTutorProfile(response);
-
     } catch (e) {
       if (mounted) {
         _showErrorDialog(e.toString().replaceFirst('Exception: ', ''));
@@ -146,8 +156,12 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
 
   void _processTutorProfile(Map<String, dynamic> profile) {
     _tutorProfile = profile;
-    _tutorName = profile['tutorName']?.toString() ?? widget.tutorData['name'] ?? 'Tutor Name';
-    _tutorHeadline = profile['tutorHeadline']?.toString() ?? widget.tutorData['sub'] ?? 'Tutor';
+    _tutorName = profile['tutorName']?.toString() ??
+        widget.tutorData['name'] ??
+        'Tutor Name';
+    _tutorHeadline = profile['tutorHeadline']?.toString() ??
+        widget.tutorData['sub'] ??
+        'Tutor';
     _tutorLocation = profile['tutorLocation']?.toString() ?? '';
     _tutorImage = profile['tutorImage']?.toString() ?? '';
     _universityName = profile['universityName']?.toString() ?? '';
@@ -160,7 +174,6 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
     _totalRatings = profile['totalRatings'] ?? 0;
     _averageRating = profile['averageRating']?.toDouble() ?? 0.0;
 
-    // ✅ Get tutor user ID from API response
     _tutorUserId = profile['tutorUserId'] ?? 0;
 
     print('🔍 Tutor User ID from API: $_tutorUserId');
@@ -172,7 +185,8 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
 
   void _filterCoursesByMode() {
     setState(() {
-      filteredCourses = allCourses.where((c) => c['mode'] == selectedMode).toList();
+      filteredCourses =
+          allCourses.where((c) => c['mode'] == selectedMode).toList();
     });
   }
 
@@ -314,26 +328,33 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Failed to update favorites'),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 2),
+            duration: Duration(seconds: 2),
           ),
         );
       }
     }
   }
 
+  // ============================================================
+  // BLOCK
+  // ============================================================
   void _showBlockDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text(
             "Block Tutor",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1C43)),
+            style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A1C43)),
           ),
           content: const Text(
             "Are you sure you want to block this tutor? You won't see their courses or receive messages from them.",
@@ -342,14 +363,18 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text("CANCEL", style: TextStyle(color: Color(0xFF1A1C43), fontWeight: FontWeight.bold)),
+              child: const Text("CANCEL",
+                  style: TextStyle(
+                      color: Color(0xFF1A1C43), fontWeight: FontWeight.bold)),
             ),
             TextButton(
               onPressed: () async {
                 Navigator.pop(context);
                 await _blockTutor();
               },
-              child: const Text("BLOCK", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              child: const Text("BLOCK",
+                  style:
+                  TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
             ),
           ],
         );
@@ -384,10 +409,14 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text(
             "Unblock Tutor",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1C43)),
+            style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A1C43)),
           ),
           content: const Text(
             "Are you sure you want to unblock this tutor? You will see their courses again.",
@@ -396,14 +425,18 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text("CANCEL", style: TextStyle(color: Color(0xFF1A1C43), fontWeight: FontWeight.bold)),
+              child: const Text("CANCEL",
+                  style: TextStyle(
+                      color: Color(0xFF1A1C43), fontWeight: FontWeight.bold)),
             ),
             TextButton(
               onPressed: () async {
                 Navigator.pop(context);
                 await _unblockTutor();
               },
-              child: const Text("UNBLOCK", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              child: const Text("UNBLOCK",
+                  style: TextStyle(
+                      color: Colors.green, fontWeight: FontWeight.bold)),
             ),
           ],
         );
@@ -418,7 +451,8 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
         _isTutorBlocked = false;
       });
       if (mounted) {
-        _showSuccessPopupAndNavigate(context, "Tutor Unblocked", "This tutor will now appear in your searches.");
+        _showSuccessPopupAndNavigate(context, "Tutor Unblocked",
+            "This tutor will now appear in your searches.");
       }
     } catch (e) {
       if (mounted) {
@@ -427,40 +461,53 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
     }
   }
 
-  void _showSuccessPopupAndNavigate(BuildContext context, String title, String subtitle) {
+  void _showSuccessPopupAndNavigate(
+      BuildContext context, String title, String subtitle) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 10),
               const Icon(Icons.check_circle, color: Colors.green, size: 60),
               const SizedBox(height: 20),
-              Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1C43))),
+              Text(title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1C43))),
               const SizedBox(height: 10),
-              Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+              Text(subtitle,
+                  textAlign: TextAlign.center,
+                  style:
+                  const TextStyle(fontSize: 13, color: Colors.grey)),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: () {
                     Navigator.pop(context);
                     Navigator.pushAndRemoveUntil(
                       context,
-                      MaterialPageRoute(builder: (context) => const StudentDashboard()),
+                      MaterialPageRoute(
+                          builder: (context) => const StudentDashboard()),
                           (route) => false,
                     );
                   },
-                  child: const Text("OK", style: TextStyle(color: Colors.white)),
+                  child:
+                  const Text("OK", style: TextStyle(color: Colors.white)),
                 ),
               ),
             ],
@@ -470,19 +517,32 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
     );
   }
 
+  // ============================================================
+  // REPORT — Inline error version
+  // ============================================================
   void _showReportDialog(BuildContext context) {
     selectedReportReason = null;
+    selectedReportReasonEnum = null;
     _reportDescriptionController.clear();
+    _evidenceUrls.clear();
+    _reportInlineError = null;
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            void setError(String? msg) {
+              setDialogState(() => _reportInlineError = msg);
+              if (mounted) setState(() => _reportInlineError = msg);
+            }
+
             return Dialog(
               backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
                 child: Column(
@@ -490,88 +550,306 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
                   children: [
                     const Text(
                       "Report Tutor",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1C43)),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1C43),
+                      ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     const Text(
-                      "Tell us what happened. Our team will review it.",
+                      "Select a reason and describe what happened. "
+                          "Our team will review it within 48 hours.",
                       style: TextStyle(fontSize: 13, color: Colors.grey),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 15),
-                    _buildReportOption(setDialogState, "Spam or Fake Account"),
-                    _buildReportOption(setDialogState, "Inappropriate Messages"),
-                    _buildReportOption(setDialogState, "Harassment"),
-                    _buildReportOption(setDialogState, "Wrong Information"),
-                    _buildReportOption(setDialogState, "Payment Issues"),
-                    _buildReportOption(setDialogState, "Other"),
-                    if (selectedReportReason == "Other") ...[
-                      const SizedBox(height: 15),
-                      const Divider(),
-                      const SizedBox(height: 15),
-                      const Text(
-                        "Please provide more details",
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
+
+                    // ---- REASONS ----
+                    _buildReportOption(
+                        setDialogState, "Harassment", "HARASSMENT"),
+                    _buildReportOption(setDialogState, "Abusive Language",
+                        "ABUSIVE_LANGUAGE"),
+                    _buildReportOption(
+                        setDialogState, "Fraud or Scam", "FRAUD_OR_SCAM"),
+                    _buildReportOption(setDialogState, "No-Show", "NO_SHOW"),
+                    _buildReportOption(
+                        setDialogState, "Poor Teaching", "POOR_TEACHING"),
+                    _buildReportOption(setDialogState,
+                        "Unprofessional Conduct", "UNPROFESSIONAL_CONDUCT"),
+                    _buildReportOption(
+                        setDialogState, "Fake Credentials", "FAKE_CREDENTIALS"),
+                    _buildReportOption(setDialogState, "Payment Dispute",
+                        "PAYMENT_DISPUTE"),
+                    _buildReportOption(setDialogState, "Other", "OTHER"),
+
+                    // ---- DESCRIPTION ----
+                    const SizedBox(height: 15),
+                    const Divider(),
+                    const SizedBox(height: 15),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Details (min 10 characters)",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
                         ),
-                        child: TextField(
-                          controller: _reportDescriptionController,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                            hintText: "Describe the issue in detail...",
-                            hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.all(12),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: TextField(
+                        controller: _reportDescriptionController,
+                        maxLines: 4,
+                        maxLength: 1000,
+                        onChanged: (_) {
+                          if (_reportInlineError != null) setError(null);
+                        },
+                        decoration: const InputDecoration(
+                          hintText: "Describe what happened...",
+                          hintStyle:
+                          TextStyle(color: Colors.grey, fontSize: 13),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.all(12),
+                          counterText: "",
+                        ),
+                      ),
+                    ),
+
+                    // ---- EVIDENCE ----
+                    const SizedBox(height: 15),
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: _isUploadingEvidence
+                              ? null
+                              : () async {
+                            final picked = await ImagePicker()
+                                .pickMultiImage(imageQuality: 80);
+                            if (picked.isEmpty) return;
+
+                            for (final x in picked) {
+                              setDialogState(() =>
+                              _isUploadingEvidence = true);
+                              try {
+                                final url = await ReportBlockService
+                                    .uploadReportEvidence(
+                                    File(x.path), _studentId);
+                                setDialogState(() {
+                                  _evidenceUrls.add(url);
+                                  _isUploadingEvidence = false;
+                                });
+                              } catch (e) {
+                                setDialogState(
+                                        () => _isUploadingEvidence = false);
+                                setError(
+                                    "Upload failed: ${e.toString().replaceFirst('Exception: ', '')}");
+                              }
+                            }
+                          },
+                          icon: const Icon(Icons.attach_file,
+                              color: Color(0xFF1A1C43)),
+                          tooltip: "Attach evidence",
+                        ),
+                        Expanded(
+                          child: Text(
+                            _evidenceUrls.isEmpty
+                                ? "Attach evidence (optional)"
+                                : "${_evidenceUrls.length} file${_evidenceUrls.length > 1 ? 's' : ''} attached",
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey),
+                          ),
+                        ),
+                        if (_isUploadingEvidence)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child:
+                            CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                      ],
+                    ),
+
+                    // ============================================================
+                    // INLINE ERROR BOX
+                    // ============================================================
+                    if (_reportInlineError != null &&
+                        _reportInlineError!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 15),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEE2E2),
+                            border: Border.all(
+                                color: const Color(0xFFFCA5A5), width: 1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.error_outline,
+                                  color: Color(0xFFDC2626), size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _reportInlineError!,
+                                  style: const TextStyle(
+                                    color: Color(0xFF991B1B),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    ],
+
+                    // ---- BUTTONS ----
                     const SizedBox(height: 20),
                     Row(
                       children: [
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: () => Navigator.pop(context),
+                            onPressed: () {
+                              Navigator.pop(dialogContext);
+                            },
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: Colors.grey),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
-                            child: const Text("CANCEL", style: TextStyle(color: Color(0xFF1A1C43), fontWeight: FontWeight.bold)),
+                            child: const Text(
+                              "CANCEL",
+                              style: TextStyle(
+                                color: Color(0xFF1A1C43),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: selectedReportReason == null
+                            onPressed: (_isSubmittingReport ||
+                                _isUploadingEvidence)
                                 ? null
                                 : () async {
-                              if (selectedReportReason == "Other" && _reportDescriptionController.text.trim().isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text("Please provide a description for your report"),
-                                    backgroundColor: Colors.orange,
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
+                              // ---- Validate reason ----
+                              if (selectedReportReason == null) {
+                                setError(
+                                    "Please select a reason for the report.");
                                 return;
                               }
-                              Navigator.pop(context);
-                              await _reportTutor();
+
+                              // ---- Validate description ----
+                              final desc =
+                              _reportDescriptionController.text
+                                  .trim();
+                              if (desc.length < 10) {
+                                setError(
+                                    "Please describe the issue in at least 10 characters.");
+                                return;
+                              }
+
+                              // Clear previous error
+                              setError(null);
+
+                              setDialogState(
+                                      () => _isSubmittingReport = true);
+                              if (mounted) {
+                                setState(() => _isSubmittingReport = true);
+                              }
+
+                              try {
+                                await ReportBlockService.createReport(
+                                  studentId: _studentId,
+                                  tutorId: _tutorId,
+                                  reason:
+                                  selectedReportReasonEnum ?? 'OTHER',
+                                  description: desc,
+                                  evidenceUrls: _evidenceUrls,
+                                );
+
+                                setDialogState(
+                                        () => _isSubmittingReport = false);
+                                if (mounted) {
+                                  setState(
+                                          () => _isSubmittingReport = false);
+                                }
+                                Navigator.pop(dialogContext);
+
+                                if (mounted) {
+                                  _showSuccessPopup(
+                                    context,
+                                    "Report Submitted",
+                                    "Thank you for letting us know. We will review this within 48 hours.",
+                                    false,
+                                  );
+                                }
+                              } catch (e) {
+                                final msg = e
+                                    .toString()
+                                    .replaceFirst('Exception: ', '')
+                                    .replaceFirst('Error: ', '')
+                                    .trim();
+
+                                setDialogState(
+                                        () => _isSubmittingReport = false);
+                                if (mounted) {
+                                  setState(
+                                          () => _isSubmittingReport = false);
+                                }
+
+                                // Friendly message for common cases
+                                String friendly = msg;
+                                final lower = msg.toLowerCase();
+                                if (lower.contains('review') ||
+                                    lower.contains('already') ||
+                                    lower.contains('pending')) {
+                                  friendly =
+                                  "You have already reported this tutor."
+                                      " You can submit another report for this tutor after 7 days.";
+                                } else if (lower.contains('block')) {
+                                  friendly =
+                                  "You have blocked this tutor. Please unblock them before reporting.";
+                                } else if (friendly.isEmpty) {
+                                  friendly =
+                                  "Something went wrong. Please try again.";
+                                }
+
+                                setError(friendly);
+                              }
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.black,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
-                            child: Text(
+                            child: _isSubmittingReport
+                                ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2),
+                            )
+                                : const Text(
                               "REPORT",
                               style: TextStyle(
-                                color: selectedReportReason == null ? Colors.grey : Colors.white,
+                                color: Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -589,89 +867,74 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
     );
   }
 
-  Future<void> _reportTutor() async {
-    setState(() => _isSubmittingReport = true);
-
-    try {
-      String description = selectedReportReason == "Other"
-          ? _reportDescriptionController.text.trim()
-          : selectedReportReason ?? 'Other';
-
-      await ReportBlockService.reportTutor(
-        studentId: _studentId,
-        tutorId: _tutorId,
-        reason: selectedReportReason ?? 'Other',
-        description: description,
-      );
-      if (mounted) {
-        setState(() => _isSubmittingReport = false);
-        _showSuccessPopup(context, "Report Submitted", "Thank you for letting us know. We will review this profile shortly.", false);
-      }
-    } catch (e) {
-      setState(() => _isSubmittingReport = false);
-      if (mounted) {
-        _showErrorDialog(e.toString().replaceFirst('Exception: ', ''));
-      }
-    }
-  }
-
-  Widget _buildReportOption(StateSetter setDialogState, String title) {
+  Widget _buildReportOption(
+      StateSetter setDialogState, String displayName, String enumName) {
     return InkWell(
       onTap: () => setDialogState(() {
-        selectedReportReason = title;
-        if (title != "Other") {
-          _reportDescriptionController.clear();
-        }
+        selectedReportReason = displayName;
+        selectedReportReasonEnum = enumName;
       }),
       child: Row(
         children: [
           Radio<String>(
-            value: title,
+            value: displayName,
             groupValue: selectedReportReason,
             activeColor: const Color(0xFF1A1C43),
             onChanged: (value) => setDialogState(() {
               selectedReportReason = value;
-              if (value != "Other") {
-                _reportDescriptionController.clear();
-              }
+              selectedReportReasonEnum = enumName;
             }),
           ),
-          Text(title, style: const TextStyle(fontSize: 14, color: Color(0xFF1A1C43))),
+          Text(displayName,
+              style:
+              const TextStyle(fontSize: 14, color: Color(0xFF1A1C43))),
         ],
       ),
     );
   }
 
-  void _showSuccessPopup(BuildContext context, String title, String subtitle, bool shouldExitProfile) {
+  void _showSuccessPopup(BuildContext context, String title, String subtitle,
+      bool shouldExitProfile) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 10),
               const Icon(Icons.check_circle, color: Colors.green, size: 60),
               const SizedBox(height: 20),
-              Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1C43))),
+              Text(title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1C43))),
               const SizedBox(height: 10),
-              Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+              Text(subtitle,
+                  textAlign: TextAlign.center,
+                  style:
+                  const TextStyle(fontSize: 13, color: Colors.grey)),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: () {
                     Navigator.pop(context);
                     if (shouldExitProfile) Navigator.pop(context);
                   },
-                  child: const Text("OK", style: TextStyle(color: Colors.white)),
+                  child:
+                  const Text("OK", style: TextStyle(color: Colors.white)),
                 ),
               ),
             ],
@@ -692,7 +955,9 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
           Center(
             child: TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text("OK", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+              child: const Text("OK",
+                  style: TextStyle(
+                      color: Colors.black, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -708,22 +973,31 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
       final month = int.parse(parts[1]);
       final day = parts[2];
       const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December'
       ];
       return '$day ${monthNames[month - 1]} $year';
     }
     return dob;
   }
 
-  // ✅ Navigate to chat with correct tutorUserId from API
   void _navigateToChat() {
     if (_isTutorBlocked) {
-      _showErrorDialog("You have blocked this tutor. Unblock them to send messages.");
+      _showErrorDialog(
+          "You have blocked this tutor. Unblock them to send messages.");
       return;
     }
 
-    // ✅ Check if we have the required IDs
     if (_tutorId == 0 || _studentId == 0 || _tutorUserId == 0) {
       _showErrorDialog("Unable to open chat. Please try again.");
       return;
@@ -732,7 +1006,7 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
     print('🔍 Navigating to chat:');
     print('   Tutor: $_tutorName');
     print('   Tutor ID: $_tutorId');
-    print('   Tutor User ID: $_tutorUserId');  // ✅ Now from API
+    print('   Tutor User ID: $_tutorUserId');
     print('   Student ID: $_studentId');
     print('   Student User ID: $_studentUserId');
 
@@ -743,7 +1017,7 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
           userName: _tutorName,
           userImage: _tutorImage.isNotEmpty ? _tutorImage : null,
           tutorId: _tutorId,
-          tutorUserId: _tutorUserId,  // ✅ From API
+          tutorUserId: _tutorUserId,
           studentId: _studentId,
           studentUserId: _studentUserId,
         ),
@@ -760,7 +1034,8 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
           _buildConsistentHeader(context),
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Colors.black))
+                ? const Center(
+                child: CircularProgressIndicator(color: Colors.black))
                 : SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               child: Column(
@@ -788,8 +1063,15 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
       padding: const EdgeInsets.fromLTRB(20, 50, 20, 20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(35), bottomRight: Radius.circular(35)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 15, offset: const Offset(0, 4))],
+        borderRadius: const BorderRadius.only(
+            bottomLeft: Radius.circular(35),
+            bottomRight: Radius.circular(35)),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 15,
+              offset: const Offset(0, 4))
+        ],
       ),
       child: Stack(
         alignment: Alignment.center,
@@ -800,12 +1082,18 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
               onTap: () => Navigator.pop(context),
               child: Container(
                 padding: const EdgeInsets.all(10),
-                decoration: const BoxDecoration(color: Colors.black, shape: BoxShape.circle),
-                child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+                decoration: const BoxDecoration(
+                    color: Colors.black, shape: BoxShape.circle),
+                child:
+                const Icon(Icons.arrow_back, color: Colors.white, size: 20),
               ),
             ),
           ),
-          const Text("Tutor Profile", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black)),
+          const Text("Tutor Profile",
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black)),
         ],
       ),
     );
@@ -820,7 +1108,8 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.black),
             color: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15)),
             onSelected: (value) {
               if (value == 'Block') _showBlockDialog(context);
               if (value == 'Unblock') _showUnblockDialog(context);
@@ -828,10 +1117,29 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
             },
             itemBuilder: (context) => [
               if (!_isTutorBlocked)
-                const PopupMenuItem(value: 'Block', child: Row(children: [Icon(Icons.block, color: Colors.red, size: 20), SizedBox(width: 10), Text('Block')])),
+                const PopupMenuItem(
+                    value: 'Block',
+                    child: Row(children: [
+                      Icon(Icons.block, color: Colors.red, size: 20),
+                      SizedBox(width: 10),
+                      Text('Block')
+                    ])),
               if (_isTutorBlocked)
-                const PopupMenuItem(value: 'Unblock', child: Row(children: [Icon(Icons.check_circle, color: Colors.green, size: 20), SizedBox(width: 10), Text('Unblock')])),
-              const PopupMenuItem(value: 'Report', child: Row(children: [Icon(Icons.report_problem_outlined, color: Colors.orange, size: 20), SizedBox(width: 10), Text('Report')])),
+                const PopupMenuItem(
+                    value: 'Unblock',
+                    child: Row(children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 20),
+                      SizedBox(width: 10),
+                      Text('Unblock')
+                    ])),
+              const PopupMenuItem(
+                  value: 'Report',
+                  child: Row(children: [
+                    Icon(Icons.report_problem_outlined,
+                        color: Colors.orange, size: 20),
+                    SizedBox(width: 10),
+                    Text('Report')
+                  ])),
             ],
           ),
         ],
@@ -853,8 +1161,13 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
               : null,
         ),
         const SizedBox(height: 15),
-        Text(_tutorName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black)),
-        Text(_tutorHeadline, style: const TextStyle(fontSize: 14, color: Colors.grey)),
+        Text(_tutorName,
+            style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.black)),
+        Text(_tutorHeadline,
+            style: const TextStyle(fontSize: 14, color: Colors.grey)),
         if (_tutorLocation.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -863,7 +1176,8 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
               children: [
                 const Icon(Icons.location_on, size: 12, color: Colors.grey),
                 const SizedBox(width: 4),
-                Text(_tutorLocation, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text(_tutorLocation,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
               ],
             ),
           ),
@@ -891,9 +1205,19 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
         decoration: BoxDecoration(
           color: Colors.black,
           borderRadius: BorderRadius.circular(25),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 4))
+          ],
         ),
-        child: const Center(child: Text("Message", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold))),
+        child: const Center(
+            child: Text("Message",
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold))),
       ),
     );
   }
@@ -901,16 +1225,23 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
   Widget _buildInfoCard() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25), border: Border.all(color: Colors.grey.shade200)),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(color: Colors.grey.shade200)),
       child: Column(
         children: [
           Row(
             children: [
-              _buildMainTab("About", showAbout, () => setState(() => showAbout = true)),
-              _buildMainTab("Courses", !showAbout, () => setState(() => showAbout = false)),
+              _buildMainTab(
+                  "About", showAbout, () => setState(() => showAbout = true)),
+              _buildMainTab("Courses", !showAbout,
+                      () => setState(() => showAbout = false)),
             ],
           ),
-          Padding(padding: const EdgeInsets.all(20), child: showAbout ? _buildAboutContent() : _buildCoursesContent()),
+          Padding(
+              padding: const EdgeInsets.all(20),
+              child: showAbout ? _buildAboutContent() : _buildCoursesContent()),
         ],
       ),
     );
@@ -925,11 +1256,16 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
           decoration: BoxDecoration(
             color: isActive ? const Color(0xFFD1D5DB) : const Color(0xFFE5E7EB),
             borderRadius: BorderRadius.only(
-              topLeft: title == "About" ? const Radius.circular(25) : Radius.zero,
-              topRight: title == "Courses" ? const Radius.circular(25) : Radius.zero,
+              topLeft:
+              title == "About" ? const Radius.circular(25) : Radius.zero,
+              topRight:
+              title == "Courses" ? const Radius.circular(25) : Radius.zero,
             ),
           ),
-          child: Center(child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black))),
+          child: Center(
+              child: Text(title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.black))),
         ),
       ),
     );
@@ -939,20 +1275,30 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Personal Details", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold,color: Colors.black)),
+        const Text("Personal Details",
+            style: TextStyle(
+                fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
         const SizedBox(height: 15),
-        _buildAboutRow(Icons.location_on_outlined, "Location", _tutorLocation.isNotEmpty ? _tutorLocation : 'Not specified'),
+        _buildAboutRow(Icons.location_on_outlined, "Location",
+            _tutorLocation.isNotEmpty ? _tutorLocation : 'Not specified'),
         if (_dateOfBirth.isNotEmpty)
-          _buildAboutRow(Icons.calendar_month_outlined, "Date of birth", _formatDateOfBirth(_dateOfBirth)),
+          _buildAboutRow(Icons.calendar_month_outlined, "Date of birth",
+              _formatDateOfBirth(_dateOfBirth)),
         if (_gender.isNotEmpty)
           _buildAboutRow(Icons.wc_outlined, "Gender", _gender),
         const SizedBox(height: 25),
-        const Text("Education", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
+        const Text("Education",
+            style: TextStyle(
+                fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
         const SizedBox(height: 15),
-        _buildAboutRow(Icons.school_outlined, "University", _universityName.isNotEmpty ? _universityName : 'Not specified'),
-        _buildAboutRow(Icons.account_balance_outlined, "College", _collegeName.isNotEmpty ? _collegeName : 'Not specified'),
+        _buildAboutRow(Icons.school_outlined, "University",
+            _universityName.isNotEmpty ? _universityName : 'Not specified'),
+        _buildAboutRow(Icons.account_balance_outlined, "College",
+            _collegeName.isNotEmpty ? _collegeName : 'Not specified'),
         const SizedBox(height: 25),
-        const Text("Work Experience", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
+        const Text("Work Experience",
+            style: TextStyle(
+                fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
         const SizedBox(height: 15),
         _buildAboutRow(Icons.work_outline, "Experience", _workExperience),
       ],
@@ -972,8 +1318,12 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
               text: TextSpan(
                 style: const TextStyle(fontSize: 14, color: Colors.black),
                 children: [
-                  TextSpan(text: "$label: ", style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
-                  TextSpan(text: value, style: const TextStyle(color: Colors.grey)),
+                  TextSpan(
+                      text: "$label: ",
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, color: Colors.black87)),
+                  TextSpan(
+                      text: value, style: const TextStyle(color: Colors.grey)),
                 ],
               ),
             ),
@@ -1055,7 +1405,10 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
         const SizedBox(height: 20),
         const Text(
           "No Courses Available",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF9CA3AF)),
+          style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF9CA3AF)),
         ),
         const SizedBox(height: 8),
         Text(
@@ -1088,7 +1441,8 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
                 'totalRatings': 28,
                 'location': course['location'],
                 'teachingMode': course['mode'],
-                'about': 'This is an excellent ${course['title']} course taught by ${course['tutorName']}.',
+                'about':
+                'This is an excellent ${course['title']} course taught by ${course['tutorName']}.',
                 'classesPerMonth': '12',
                 'fromDay': 'Monday',
                 'toDay': 'Friday',
@@ -1175,7 +1529,8 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
                     ),
                     const SizedBox(height: 4),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: course['badgeColor'].withOpacity(0.2),
                         borderRadius: BorderRadius.circular(8),
@@ -1229,7 +1584,9 @@ class _TutorProfileScreenState extends State<TutorProfileScreen> {
                         Icon(
                           course['mode'] == 'Online'
                               ? Icons.wifi
-                              : (course['mode'] == "Student's Home" ? Icons.home : Icons.location_city),
+                              : (course['mode'] == "Student's Home"
+                              ? Icons.home
+                              : Icons.location_city),
                           size: 9,
                           color: Colors.grey,
                         ),
@@ -1267,7 +1624,11 @@ class _StatItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF1A1C43))),
+        Text(value,
+            style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Color(0xFF1A1C43))),
         Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
       ],
     );

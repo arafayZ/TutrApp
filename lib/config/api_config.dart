@@ -111,8 +111,15 @@ class ApiConfig {
   static const String unblockTutor = '/api/student/block'; // + /{studentId}/unblock/{tutorId}
   static const String getBlockedList = '/api/student/block'; // + /{studentId}/list
   static const String checkBlocked = '/api/student/block'; // + /{studentId}/check/{tutorId}
+ //old one
   static const String reportTutor = '/api/student/block/report';
- // static const String getMyReports = '/api/student/block'; // + /{studentId}/reports
+
+  // NEW — Report APIs
+  static const String createReport = '/api/reports';                // ?studentId={id}
+  static const String uploadReportEvidence = '/api/reports/upload-evidence'; // ?studentId={id}
+  static const String getMyReports = '/api/reports/my';             // ?studentId={id}
+
+  // static const String getMyReports = '/api/student/block'; // + /{studentId}/reports
 
   // ============ CHAT APIS ============
   static const String getChatRoom = '/api/chat/room'; // + /{connectionId}

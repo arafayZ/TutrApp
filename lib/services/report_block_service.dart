@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
-import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
+import 'api_client.dart';
 
 class ReportBlockService {
   static bool get useRealApi => ApiConfig.useRealApi;
@@ -31,25 +33,6 @@ class ReportBlockService {
     return 'Something went wrong';
   }
 
-  static String _mapReportReason(String reason) {
-    switch (reason.toLowerCase()) {
-      case 'spam or fake account':
-        return 'Spam_or_Fake_Account';
-      case 'inappropriate messages':
-        return 'Inappropriate_Messages';
-      case 'harassment':
-        return 'HARASSMENT';
-      case 'wrong information':
-        return 'Wrong_Information';
-      case 'payment issues':
-        return 'Payment_Issues';
-      case 'other':
-        return 'OTHER';
-      default:
-        return 'OTHER';
-    }
-  }
-
   // ============ BLOCKED TUTORS MANAGEMENT ============
 
   static Future<List<Map<String, dynamic>>> getBlockedTutors(int studentId) async {
@@ -70,20 +53,7 @@ class ReportBlockService {
       }
     } else {
       await Future.delayed(const Duration(seconds: 1));
-      return [
-        {
-          'tutorId': 1,
-          'tutorName': 'Ahmed Khan',
-          'tutorHeadline': 'Physics Expert',
-          'tutorImage': null,
-        },
-        {
-          'tutorId': 2,
-          'tutorName': 'Sara Malik',
-          'tutorHeadline': 'Math Instructor',
-          'tutorImage': null,
-        },
-      ];
+      return [];
     }
   }
 
@@ -95,28 +65,21 @@ class ReportBlockService {
 
         if (response.statusCode == 200) {
           final responseBody = response.body.trim();
-          if (responseBody == 'true') {
-            return true;
-          } else if (responseBody == 'false') {
+          if (responseBody == 'true') return true;
+          if (responseBody == 'false') return false;
+          try {
+            final data = json.decode(responseBody);
+            return data == true || data['blocked'] == true || data['isBlocked'] == true;
+          } catch (e) {
             return false;
-          } else {
-            try {
-              final data = json.decode(responseBody);
-              return data == true || data['blocked'] == true || data['isBlocked'] == true;
-            } catch (e) {
-              return false;
-            }
           }
-        } else {
-          return false;
         }
+        return false;
       } catch (e) {
         return false;
       }
-    } else {
-      await Future.delayed(const Duration(milliseconds: 500));
-      return false;
     }
+    return false;
   }
 
   static Future<Map<String, dynamic>> blockTutor(int studentId, int tutorId) async {
@@ -126,33 +89,20 @@ class ReportBlockService {
         final response = await ApiClient.post(Uri.parse(url));
 
         if (response.statusCode == 200) {
-          final responseBody = response.body.trim();
-          if (responseBody == 'true') {
-            return {'success': true, 'message': 'Tutor blocked successfully'};
-          }
-          try {
-            final data = json.decode(responseBody);
-            return {'success': true, 'message': data['message'] ?? 'Tutor blocked successfully'};
-          } catch (e) {
-            return {'success': true, 'message': 'Tutor blocked successfully'};
-          }
+          return {'success': true, 'message': 'Tutor blocked successfully'};
         } else {
-          String errorMsg = '';
+          String errorMsg = 'Failed to block tutor';
           try {
             final errorData = json.decode(response.body);
-            errorMsg = errorData['error'] ?? 'Failed to block tutor';
-          } catch (e) {
-            errorMsg = response.body.trim();
-          }
+            errorMsg = errorData['error'] ?? errorMsg;
+          } catch (_) {}
           throw Exception(_cleanErrorMessage(errorMsg));
         }
       } catch (e) {
         throw Exception(_cleanErrorMessage(e.toString()));
       }
-    } else {
-      await Future.delayed(const Duration(seconds: 1));
-      return {'success': true, 'message': 'Tutor blocked successfully'};
     }
+    return {'success': true, 'message': 'Tutor blocked successfully'};
   }
 
   static Future<Map<String, dynamic>> unblockTutor(int studentId, int tutorId) async {
@@ -162,86 +112,131 @@ class ReportBlockService {
         final response = await ApiClient.delete(Uri.parse(url));
 
         if (response.statusCode == 200) {
-          final responseBody = response.body.trim();
-          if (responseBody == 'true') {
-            return {'success': true, 'message': 'Tutor unblocked successfully'};
-          }
-          try {
-            final data = json.decode(responseBody);
-            return {'success': true, 'message': data['message'] ?? 'Tutor unblocked successfully'};
-          } catch (e) {
-            return {'success': true, 'message': 'Tutor unblocked successfully'};
-          }
+          return {'success': true, 'message': 'Tutor unblocked successfully'};
         } else {
-          String errorMsg = '';
+          String errorMsg = 'Failed to unblock tutor';
           try {
             final errorData = json.decode(response.body);
-            errorMsg = errorData['error'] ?? 'Failed to unblock tutor';
-          } catch (e) {
-            errorMsg = response.body.trim();
-          }
+            errorMsg = errorData['error'] ?? errorMsg;
+          } catch (_) {}
           throw Exception(_cleanErrorMessage(errorMsg));
         }
       } catch (e) {
         throw Exception(_cleanErrorMessage(e.toString()));
       }
-    } else {
+    }
+    return {'success': true, 'message': 'Tutor unblocked successfully'};
+  }
+
+  // ============ REPORT TUTOR (NEW FLOW) ============
+
+  /// Submit a report to the backend
+  static Future<Map<String, dynamic>> createReport({
+    required int studentId,
+    required int tutorId,
+    required String reason,        // enum name, e.g. "HARASSMENT"
+    required String description,
+    int? connectionId,
+    List<String> evidenceUrls = const [],
+  }) async {
+    if (!useRealApi) {
       await Future.delayed(const Duration(seconds: 1));
-      return {'success': true, 'message': 'Tutor unblocked successfully'};
+      return {'success': true, 'message': 'Report submitted successfully'};
+    }
+
+    try {
+      final requestBody = {
+        'tutorId': tutorId,
+        'connectionId': connectionId,
+        'reason': reason,
+        'description': description,
+        'evidenceUrls': evidenceUrls,
+      };
+
+      // ✅ Uses ApiConfig constant + getFullUrlWithParams helper
+      final uri = Uri.parse(ApiConfig.getFullUrlWithParams(
+        ApiConfig.createReport,
+        {'studentId': studentId.toString()},
+      ));
+
+      final response = await ApiClient.post(
+        uri,
+        body: json.encode(requestBody),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return {
+          'success': true,
+          'id': data['id'],
+          'message': 'Report submitted successfully',
+        };
+      } else {
+        String errorMsg = 'Failed to submit report';
+        try {
+          final err = json.decode(response.body);
+          errorMsg = err['error'] ?? errorMsg;
+        } catch (_) {}
+        throw Exception(_cleanErrorMessage(errorMsg));
+      }
+    } catch (e) {
+      throw Exception(_cleanErrorMessage(e.toString()));
     }
   }
 
-  // ============ REPORT TUTOR ============
+  /// Upload a single evidence image. Returns the stored URL path.
+  static Future<String> uploadReportEvidence(File image, int studentId) async {
+    if (!useRealApi) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      return '/uploads/report-evidence/mock.jpg';
+    }
 
-  static Future<Map<String, dynamic>> reportTutor({
-    required int studentId,
-    required int tutorId,
-    required String reason,
-    String? description,
-  }) async {
-    if (useRealApi) {
-      try {
-        String mappedReason = _mapReportReason(reason);
+    try {
+      // ✅ Uses ApiConfig constant
+      final uri = Uri.parse(ApiConfig.getFullUrlWithParams(
+        ApiConfig.uploadReportEvidence,
+        {'studentId': studentId.toString()},
+      ));
 
-        final requestBody = {
-          'studentId': studentId,
-          'tutorId': tutorId,
-          'reason': mappedReason,
-          'description': description ?? '',
-        };
+      final request = http.MultipartRequest('POST', uri);
+      request.files.add(await http.MultipartFile.fromPath('file', image.path));
 
-        final response = await ApiClient.post(
-          Uri.parse(ApiConfig.getFullUrl(ApiConfig.reportTutor)),
-          body: json.encode(requestBody),
-        );
-
-        if (response.statusCode == 200) {
-          final responseBody = response.body.trim();
-          if (responseBody == 'true') {
-            return {'success': true, 'message': 'Report submitted successfully'};
-          }
-          try {
-            final data = json.decode(responseBody);
-            return {'success': true, 'message': data['message'] ?? 'Report submitted successfully'};
-          } catch (e) {
-            return {'success': true, 'message': 'Report submitted successfully'};
-          }
-        } else {
-          String errorMsg = '';
-          try {
-            final errorData = json.decode(response.body);
-            errorMsg = errorData['error'] ?? 'Failed to report tutor';
-          } catch (e) {
-            errorMsg = response.body.trim();
-          }
-          throw Exception(_cleanErrorMessage(errorMsg));
-        }
-      } catch (e) {
-        throw Exception(_cleanErrorMessage(e.toString()));
+      final response = await ApiClient.sendMultipart(request);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['url'];
+      } else {
+        throw Exception('Evidence upload failed');
       }
-    } else {
+    } catch (e) {
+      throw Exception(_cleanErrorMessage(e.toString()));
+    }
+  }
+
+  /// Get the student's own submitted reports
+  static Future<List<Map<String, dynamic>>> getMyReports(int studentId) async {
+    if (!useRealApi) {
       await Future.delayed(const Duration(seconds: 1));
-      return {'success': true, 'message': 'Report submitted successfully'};
+      return [];
+    }
+
+    try {
+      //  Uses ApiConfig constant
+      final uri = Uri.parse(ApiConfig.getFullUrlWithParams(
+        ApiConfig.getMyReports,
+        {'studentId': studentId.toString()},
+      ));
+
+      final response = await ApiClient.get(uri);
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        throw Exception('Failed to load reports');
+      }
+    } catch (e) {
+      throw Exception(_cleanErrorMessage(e.toString()));
     }
   }
 }
