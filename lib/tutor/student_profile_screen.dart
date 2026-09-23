@@ -1,32 +1,36 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/StudentReportService.dart';
 import 'chat_details_screen.dart';
 import '../services/connection_service.dart';
+import '../services/report_block_service.dart';
 import '../config/api_config.dart';
 
 // --- COURSE COLORS (Same as dashboard) ---
 class CourseColors {
   static const List<Color> colors = [
-    Color(0xFF1A1A2E), // Dark Navy
-    Color(0xFF16213E), // Deep Navy
-    Color(0xFF0F3460), // Dark Blue
-    Color(0xFF8B1E3F), // Dark Crimson
-    Color(0xFF2C3E50), // Dark Slate
-    Color(0xFF1B4F72), // Deep Teal
-    Color(0xFF145A32), // Dark Green
-    Color(0xFF7B2C3E), // Deep Maroon
-    Color(0xFF4A235A), // Dark Violet
-    Color(0xFF1C2833), // Almost Black Blue
-    Color(0xFF6E2C00), // Dark Orange-Brown
-    Color(0xFF0B5345), // Dark Cyan-Green
-    Color(0xFF424949), // Dark Gray
-    Color(0xFF5D4037), // Dark Brown
-    Color(0xFF283747), // Dark Steel Blue
-    Color(0xFF7E5109), // Dark Gold
-    Color(0xFF4A4A4A), // Dark Gray
-    Color(0xFF3E2723), // Very Dark Brown
-    Color(0xFF1A237E), // Deep Indigo
+    Color(0xFF1A1A2E),
+    Color(0xFF16213E),
+    Color(0xFF0F3460),
+    Color(0xFF8B1E3F),
+    Color(0xFF2C3E50),
+    Color(0xFF1B4F72),
+    Color(0xFF145A32),
+    Color(0xFF7B2C3E),
+    Color(0xFF4A235A),
+    Color(0xFF1C2833),
+    Color(0xFF6E2C00),
+    Color(0xFF0B5345),
+    Color(0xFF424949),
+    Color(0xFF5D4037),
+    Color(0xFF283747),
+    Color(0xFF7E5109),
+    Color(0xFF4A4A4A),
+    Color(0xFF3E2723),
+    Color(0xFF1A237E),
   ];
 
   static Color getCourseColor(int courseId) {
@@ -83,6 +87,18 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   bool _isFetching = true;
   List<Map<String, dynamic>> _courses = [];
 
+  // ============================================================
+  // REPORT STUDENT — State
+  // ============================================================
+  final TextEditingController _reportDescriptionController =
+  TextEditingController();
+  bool _isSubmittingReport = false;
+  String? _selectedReportReason;
+  String? _selectedReportReasonEnum;
+  final List<String> _evidenceUrls = [];
+  bool _isUploadingEvidence = false;
+  String? _reportInlineError;
+
   @override
   void initState() {
     super.initState();
@@ -98,6 +114,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
   @override
   void dispose() {
+    _reportDescriptionController.dispose();
     super.dispose();
   }
 
@@ -146,16 +163,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   }
 
   // ============================================================
-  // ✅ DISCONNECT — now shows a course picker when > 1 course
+  // DISCONNECT — course picker when > 1 course
   // ============================================================
   void _showDisconnectDialog() {
-    // If no courses, nothing to disconnect
     if (_courses.isEmpty) {
       _showErrorDialog("No courses found for this student.");
       return;
     }
 
-    // Only one course — go straight to confirmation
     if (_courses.length == 1) {
       final course = _courses[0];
       _confirmAndDisconnect(
@@ -166,7 +181,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       return;
     }
 
-    // Multiple courses — show picker
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -348,7 +362,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     return '${ApiConfig.baseUrl}$imageUrl';
   }
 
-  // ✅ Open chat with proper parameters
+  // ============================================================
+  // OPEN CHAT
+  // ============================================================
   void _openChat() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     int tutorId = prefs.getInt('profileId') ?? 0;
@@ -356,15 +372,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
     String studentId = widget.student.id;
 
-    // Try primary source
     int studentUserId = _studentData?['studentUserId'] ?? 0;
 
-    // Fallback: get from courses list
     if (studentUserId == 0 && _courses.isNotEmpty) {
       studentUserId = _courses.first['studentUserId'] ?? 0;
     }
 
-    // Fallback: refetch fresh from API
     if (studentUserId == 0) {
       try {
         final fresh = await ConnectionService.getStudentDetail(
@@ -383,7 +396,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         _studentData?['studentImage'] as String? ?? widget.student.profilePic;
     int connectionId = int.parse(widget.student.connectionId);
 
-    print('🔍 Chat open — studentUserId: $studentUserId, connectionId: $connectionId');
+    print(
+        '🔍 Chat open — studentUserId: $studentUserId, connectionId: $connectionId');
 
     if (studentUserId == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -411,6 +425,438 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
+  // ============================================================
+  // REPORT — Main dialog with inline error box
+  // ============================================================
+  void _showReportDialog() {
+    _selectedReportReason = null;
+    _selectedReportReasonEnum = null;
+    _reportDescriptionController.clear();
+    _evidenceUrls.clear();
+    _reportInlineError = null;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void setError(String? msg) {
+              setDialogState(() => _reportInlineError = msg);
+              if (mounted) setState(() => _reportInlineError = msg);
+            }
+
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      "Report Student",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1C43),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      "Select a reason and describe what happened. "
+                          "Our team will review it within 48 hours.",
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 15),
+
+                    // ---- REASONS ----
+                    _buildReportOption(
+                        setDialogState, "Harassment", "HARASSMENT"),
+                    _buildReportOption(setDialogState, "Abusive Language",
+                        "ABUSIVE_LANGUAGE"),
+                    _buildReportOption(
+                        setDialogState, "Fraud or Scam", "FRAUD_OR_SCAM"),
+                    _buildReportOption(
+                        setDialogState, "Non-Payment", "NON_PAYMENT"),
+                    _buildReportOption(setDialogState, "Disrespectful Conduct",
+                        "DISRESPECTFUL_CONDUCT"),
+                    _buildReportOption(setDialogState, "Unrealistic Demands",
+                        "UNREALISTIC_DEMANDS"),
+                    _buildReportOption(setDialogState, "False Report / Abuse",
+                        "FALSE_REPORT_ABUSE"),
+                    _buildReportOption(setDialogState, "Other", "OTHER"),
+
+                    // ---- DESCRIPTION ----
+                    const SizedBox(height: 15),
+                    const Divider(),
+                    const SizedBox(height: 15),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Details (min 10 characters)",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: TextField(
+                        controller: _reportDescriptionController,
+                        maxLines: 4,
+                        maxLength: 1000,
+                        onChanged: (_) {
+                          if (_reportInlineError != null) setError(null);
+                        },
+                        decoration: const InputDecoration(
+                          hintText: "Describe what happened...",
+                          hintStyle:
+                          TextStyle(color: Colors.grey, fontSize: 13),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.all(12),
+                          counterText: "",
+                        ),
+                      ),
+                    ),
+
+                    // ---- EVIDENCE ----
+                    const SizedBox(height: 15),
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: _isUploadingEvidence
+                              ? null
+                              : () async {
+                            final picked = await ImagePicker()
+                                .pickMultiImage(imageQuality: 80);
+                            if (picked.isEmpty) return;
+
+                            // Get tutorId from prefs once
+                            final prefs =
+                            await SharedPreferences.getInstance();
+                            final tutorId =
+                                prefs.getInt('profileId') ?? 0;
+
+                            for (final x in picked) {
+                              setDialogState(() =>
+                              _isUploadingEvidence = true);
+                              try {
+                                // ✅ REAL upload to backend
+                                final url = await StudentReportService
+                                    .uploadEvidence(
+                                    File(x.path), tutorId);
+
+                                setDialogState(() {
+                                  _evidenceUrls.add(url);
+                                  _isUploadingEvidence = false;
+                                });
+                              } catch (e) {
+                                setDialogState(() =>
+                                _isUploadingEvidence = false);
+                                setError(
+                                    "Upload failed: ${e.toString().replaceFirst('Exception: ', '')}");
+                              }
+                            }
+                          },
+                          icon: const Icon(Icons.attach_file,
+                              color: Color(0xFF1A1C43)),
+                          tooltip: "Attach evidence",
+                        ),
+                        Expanded(
+                          child: Text(
+                            _evidenceUrls.isEmpty
+                                ? "Attach evidence (optional)"
+                                : "${_evidenceUrls.length} file${_evidenceUrls.length > 1 ? 's' : ''} attached",
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey),
+                          ),
+                        ),
+                        if (_isUploadingEvidence)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                      ],
+                    ),
+
+                    // ---- INLINE ERROR BOX ----
+                    if (_reportInlineError != null &&
+                        _reportInlineError!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 15),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEE2E2),
+                            border: Border.all(
+                                color: const Color(0xFFFCA5A5), width: 1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.error_outline,
+                                  color: Color(0xFFDC2626), size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _reportInlineError!,
+                                  style: const TextStyle(
+                                    color: Color(0xFF991B1B),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    // ---- BUTTONS ----
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Colors.grey),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text(
+                              "CANCEL",
+                              style: TextStyle(
+                                color: Color(0xFF1A1C43),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: (_isSubmittingReport ||
+                                _isUploadingEvidence)
+                                ? null
+                                : () async {
+                              // Validate reason
+                              if (_selectedReportReason == null) {
+                                setError(
+                                    "Please select a reason for the report.");
+                                return;
+                              }
+
+                              // Validate description
+                              final desc = _reportDescriptionController
+                                  .text
+                                  .trim();
+                              if (desc.length < 10) {
+                                setError(
+                                    "Please describe the issue in at least 10 characters.");
+                                return;
+                              }
+
+                              setError(null);
+                              setDialogState(() =>
+                              _isSubmittingReport = true);
+                              if (mounted) {
+                                setState(() =>
+                                _isSubmittingReport = true);
+                              }
+
+                              try {
+                                // ✅ Get tutorId + studentId
+                                final prefs =
+                                await SharedPreferences
+                                    .getInstance();
+                                final tutorId =
+                                    prefs.getInt('profileId') ?? 0;
+                                final studentId =
+                                int.parse(widget.student.id);
+
+                                // ✅ REAL API CALL
+                                await StudentReportService.createReport(
+                                  tutorId: tutorId,
+                                  studentId: studentId,
+                                  reason: _selectedReportReasonEnum ??
+                                      'OTHER',
+                                  description: desc,
+                                  evidenceUrls: _evidenceUrls,
+                                );
+
+                                setDialogState(() =>
+                                _isSubmittingReport = false);
+                                if (mounted) {
+                                  setState(() =>
+                                  _isSubmittingReport = false);
+                                }
+                                Navigator.pop(dialogContext);
+
+                                if (mounted) {
+                                  _showReportSuccessPopup(
+                                    "Report Submitted",
+                                    "Thank you for letting us know. We will review this within 48 hours.",
+                                  );
+                                }
+                              } catch (e) {
+                                final msg = e
+                                    .toString()
+                                    .replaceFirst('Exception: ', '')
+                                    .replaceFirst('Error: ', '')
+                                    .trim();
+
+                                setDialogState(() =>
+                                _isSubmittingReport = false);
+                                if (mounted) {
+                                  setState(() =>
+                                  _isSubmittingReport = false);
+                                }
+
+                                String friendly = msg;
+                                final lower = msg.toLowerCase();
+                                if (lower.contains('review') ||
+                                    lower.contains('already') ||
+                                    lower.contains('pending')) {
+                                  friendly =
+                                  "You have already reported this student."
+                                      " You can submit another report for this student after 7 days.";
+                                } else if (friendly.isEmpty) {
+                                  friendly =
+                                  "Something went wrong. Please try again.";
+                                }
+
+                                setError(friendly);
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.black,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: _isSubmittingReport
+                                ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2),
+                            )
+                                : const Text(
+                              "REPORT",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildReportOption(
+      StateSetter setDialogState, String displayName, String enumName) {
+    return InkWell(
+      onTap: () => setDialogState(() {
+        _selectedReportReason = displayName;
+        _selectedReportReasonEnum = enumName;
+      }),
+      child: Row(
+        children: [
+          Radio<String>(
+            value: displayName,
+            groupValue: _selectedReportReason,
+            activeColor: const Color(0xFF1A1C43),
+            onChanged: (value) => setDialogState(() {
+              _selectedReportReason = value;
+              _selectedReportReasonEnum = enumName;
+            }),
+          ),
+          Text(displayName,
+              style: const TextStyle(fontSize: 14, color: Color(0xFF1A1C43))),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // REPORT — Success confirmation popup
+  // ============================================================
+  void _showReportSuccessPopup(String title, String subtitle) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              const Icon(Icons.check_circle, color: Colors.green, size: 60),
+              const SizedBox(height: 20),
+              Text(title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1C43))),
+              const SizedBox(height: 10),
+              Text(subtitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 13, color: Colors.grey)),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  child:
+                  const Text("OK", style: TextStyle(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     if (_isFetching) {
@@ -632,7 +1078,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                     height: 24,
                     color: Colors.white,
                     errorBuilder: (context, error, stackTrace) {
-                      return const Icon(Icons.school, color: Colors.white, size: 24);
+                      return const Icon(Icons.school,
+                          color: Colors.white, size: 24);
                     },
                   ),
                 ),
@@ -683,6 +1130,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
+  // ============================================================
+  // HEADER — back button + title + 3-dot menu (Report)
+  // ============================================================
   Widget _buildHeader(BuildContext context) {
     return Container(
       height: 80,
@@ -715,7 +1165,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                   color: Colors.black,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.arrow_back, color: Colors.white, size: 22),
+                child: const Icon(Icons.arrow_back,
+                    color: Colors.white, size: 22),
               ),
             ),
           ),
@@ -725,6 +1176,32 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: Colors.black,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.black),
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+              onSelected: (value) {
+                if (value == 'Report') _showReportDialog();
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'Report',
+                  child: Row(
+                    children: [
+                      Icon(Icons.report_problem_outlined,
+                          color: Colors.orange, size: 20),
+                      SizedBox(width: 10),
+                      Text('Report'),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],

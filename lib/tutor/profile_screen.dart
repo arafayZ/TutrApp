@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/custom_bottom_nav.dart';
 import 'add_course_screen.dart';
 import 'security_screen.dart';
+import 'tutor_community_guidelines_screen.dart';
 import 'unavailable_courses_screen.dart';
 import 'edit_profile_screen.dart';
 import '../services/auth_service.dart';
@@ -471,6 +472,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           "Terms & Conditions",
                           onTap: () {
                             Navigator.pushNamed(context, '/terms_conditions');
+                          },
+                        ),
+                        _buildProfileOption(
+                          Icons.gavel_outlined,
+                          "Community Guidelines",
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const TutorCommunityGuidelinesScreen(),
+                              ),
+                            );
                           },
                         ),
                         _buildProfileOption(

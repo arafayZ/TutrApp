@@ -114,11 +114,15 @@ class ApiConfig {
  //old one
   static const String reportTutor = '/api/student/block/report';
 
-  // NEW — Report APIs
+  // NEW — Student → Tutor reports  
   static const String createReport = '/api/reports';                // ?studentId={id}
   static const String uploadReportEvidence = '/api/reports/upload-evidence'; // ?studentId={id}
   static const String getMyReports = '/api/reports/my';             // ?studentId={id}
 
+  //  NEW — Tutor → Student reports
+  static const String createStudentReport = '/api/tutor/student-reports';
+  static const String uploadStudentReportEvidence = '/api/tutor/student-reports/upload-evidence';
+  static const String getMyStudentReports = '/api/tutor/student-reports/my';
   // static const String getMyReports = '/api/student/block'; // + /{studentId}/reports
 
   // ============ CHAT APIS ============

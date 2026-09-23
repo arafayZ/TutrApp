@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/notification_service.dart';
 import '../tutor/terms_conditions_screen.dart';
+import 'student_community_guidelines_screen.dart';
 import 'edit_profile_screen.dart';
 import '../tutor/security_screen.dart';
 import 'block_tutor_screen.dart';
@@ -364,6 +365,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               context,
                               MaterialPageRoute(
                                 builder: (context) => const TermsConditionsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileOption(
+                          Icons.gavel_outlined,
+                          "Community Guidelines",
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const StudentCommunityGuidelinesScreen(),
                               ),
                             );
                           },
