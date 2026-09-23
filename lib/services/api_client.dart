@@ -35,7 +35,12 @@ class ApiClient {
   };
 
   /// Called after every authenticated response.
-  /// If 401/403 → clears token, redirects to login, throws SessionExpiredException.
+  /// - 401 → session expired → force logout
+  /// - 403 → check JSON error code:
+  ///     ACCOUNT_SUSPENDED       → force logout with reason
+  ///     ACCOUNT_BANNED          → force logout with reason
+  ///     VERIFICATION_REJECTED   → force logout with reason
+  ///     Anything else           → return 403 to caller
   static Future<http.Response> _check(http.Response response) async {
     // ---- 401: always session expired ----
     if (response.statusCode == 401) {
@@ -46,29 +51,52 @@ class ApiClient {
       }
     }
 
-    // ---- 403: only force logout if it's a SUSPENSION ----
+    // ---- 403: force logout only for known account state errors ----
     if (response.statusCode == 403) {
       final token = await _token();
       if (token != null && token.isNotEmpty) {
-        bool isSuspended = false;
+        String? errorCode;
+        String? message;
 
         try {
           final body = jsonDecode(response.body);
-          if (body is Map && body['error'] == 'ACCOUNT_SUSPENDED') {
-            isSuspended = true;
+          if (body is Map) {
+            errorCode = body['error']?.toString();
+            message = body['message']?.toString();
           }
         } catch (_) {
-          // Not JSON → treat as a normal permission error, don't logout
+          // Not JSON → treat as normal permission error, don't logout
         }
 
-        if (isSuspended) {
-          await forceLogout(
-            reason: 'Your account has been suspended. '
-                'Please contact support at tutr.verify@gmail.com',
-          );
-          throw SessionExpiredException();
+        switch (errorCode) {
+          case 'ACCOUNT_SUSPENDED':
+            await forceLogout(
+              reason: message ??
+                  'Your account has been suspended. '
+                      'Please contact support at tutr.verify@gmail.com',
+            );
+            throw SessionExpiredException();
+
+          case 'ACCOUNT_BANNED':
+            await forceLogout(
+              reason: message ??
+                  'This account has been permanently disabled. '
+                      'Contact support at tutr.verify@gmail.com if you believe this is a mistake.',
+            );
+            throw SessionExpiredException();
+
+          case 'VERIFICATION_REJECTED':
+            await forceLogout(
+              reason: message ??
+                  'Your verification documents were rejected. '
+                      'Please log in and re-upload new documents.',
+            );
+            throw SessionExpiredException();
+
+          default:
+          // Unknown 403 → return to caller (e.g., chat permission errors)
+            break;
         }
-        // ✅ NOT suspended → return 403 to caller (chat permission errors etc.)
       }
     }
 
@@ -84,7 +112,8 @@ class ApiClient {
       Uri url, {
         Duration timeout = const Duration(seconds: 15),
       }) async {
-    final res = await http.get(url, headers: await _authJsonHeaders()).timeout(timeout);
+    final res =
+    await http.get(url, headers: await _authJsonHeaders()).timeout(timeout);
     return _check(res);
   }
 

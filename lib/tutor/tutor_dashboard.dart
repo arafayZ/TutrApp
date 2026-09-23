@@ -231,9 +231,20 @@ class _TutorDashboardState extends State<TutorDashboard> with WidgetsBindingObse
       });
 
     } on SessionExpiredException {
-      //  Session expired — forceLogout() already cleared state and
-      // navigated to login. Do nothing here.
       return;
+    } catch (e) {
+      // ✅ Defensive — if force-logout was triggered but exception was wrapped
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('session') ||
+          msg.contains('please log in') ||
+          msg.contains('forbidden') ||
+          msg.contains('rejected') ||
+          msg.contains('suspended') ||
+          msg.contains('banned') ||
+          msg.contains('permanently disabled') ||
+          msg.contains('verification')) {
+        return;   // stay silent — forceLogout already navigated
+      }
     } catch (e) {
       print('Error loading dashboard: $e');
       setState(() {

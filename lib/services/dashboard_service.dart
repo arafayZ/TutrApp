@@ -1,6 +1,7 @@
 import 'dart:convert';
 import '../config/api_config.dart';
-import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
+import 'api_client.dart';
+import 'session_expired_exception.dart';   // ✅ NEW
 
 class DashboardService {
   static bool get useRealApi => ApiConfig.useRealApi;
@@ -21,7 +22,6 @@ class DashboardService {
   }
 
   // ============ TUTOR DASHBOARD ============
-  // Fetches dashboard data for tutor including active students, courses, and top courses
 
   static Future<Map<String, dynamic>> getTutorDashboard(int tutorId) async {
     if (useRealApi) {
@@ -36,6 +36,8 @@ class DashboardService {
           final errorData = response.body.isNotEmpty ? json.decode(response.body) : {};
           throw Exception(_cleanErrorMessage(errorData['error'] ?? 'Failed to load dashboard'));
         }
+      } on SessionExpiredException {
+        rethrow;   // ✅ LET IT BUBBLE UP
       } catch (e) {
         throw Exception(_cleanErrorMessage(e.toString()));
       }
@@ -68,14 +70,13 @@ class DashboardService {
   }
 
   // ============ STUDENT DASHBOARD ============
-  // Fetches dashboard data for student including top tutors and recommended courses
 
   static Future<Map<String, dynamic>> getStudentDashboard(int studentId) async {
     if (useRealApi) {
       try {
         final url = ApiConfig.getFullUrl('${ApiConfig.studentDashboard}/$studentId');
 
-        final response = await ApiClient.get(Uri.parse(url)); // 👈 switched to ApiClient
+        final response = await ApiClient.get(Uri.parse(url));
 
         if (response.statusCode == 200) {
           return json.decode(response.body);
@@ -83,6 +84,8 @@ class DashboardService {
           final errorData = response.body.isNotEmpty ? json.decode(response.body) : {};
           throw Exception(_cleanErrorMessage(errorData['error'] ?? 'Failed to load dashboard'));
         }
+      } on SessionExpiredException {
+        rethrow;   // ✅ LET IT BUBBLE UP
       } catch (e) {
         throw Exception(_cleanErrorMessage(e.toString()));
       }

@@ -44,21 +44,34 @@ class _LoginScreenState extends State<LoginScreen> {
     final reason = prefs.getString('logout_reason');
     if (reason == null || reason.isEmpty) return;
 
-    // Clear so it doesn't show again on next open
     await prefs.remove('logout_reason');
 
     if (!mounted) return;
 
-    // Suspension gets a proper dialog
-    if (reason.toLowerCase().contains('suspended')) {
+    final lower = reason.toLowerCase();
+
+    if (lower.contains('permanently disabled') || lower.contains('banned')) {
+      _showInfoDialog(
+        title: "Account Permanently Disabled",
+        message: reason,
+        icon: Icons.block,
+        iconColor: Colors.red,
+      );
+    } else if (lower.contains('suspended')) {
       _showInfoDialog(
         title: "Account Suspended",
         message: reason,
         icon: Icons.block,
         iconColor: Colors.red,
       );
+    } else if (lower.contains('verification') || lower.contains('rejected')) {
+      _showInfoDialog(
+        title: "Documents Rejected",
+        message: reason,
+        icon: Icons.warning_amber_rounded,
+        iconColor: Colors.orange,
+      );
     } else {
-      // Generic session expiry — keep as error popup
       _showErrorPopup(reason);
     }
   }
@@ -214,13 +227,16 @@ class _LoginScreenState extends State<LoginScreen> {
     // Verification Documents Required (Tutor only)
     else if (lowerMsg.contains('verification') || lowerMsg.contains('documents')) {
       if (userRole == 'TUTOR') {
+        // ✅ If a rejection reason exists, it's a re-submission
+        final isResubmission = lowerMsg.contains('rejected');
         _showActionDialog(
-          title: "Verification Required",
+          title: isResubmission ? "Documents Rejected" : "Verification Required",
           message: errorMsg,
-          buttonText: "Upload Documents",
+          buttonText: isResubmission ? "Re-Upload Documents" : "Upload Documents",
           destination: TutorVerificationScreen(
             userId: userId,
-            createdAt: createdAt, // 👈 PASS IT
+            createdAt: createdAt,
+            isResubmission: isResubmission,   // ✅ NEW
           ),
         );
       } else {

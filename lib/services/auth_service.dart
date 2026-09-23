@@ -6,6 +6,7 @@ import '../config/api_config.dart';
 import '../utils/api_mapper.dart';
 import 'package:http_parser/http_parser.dart';
 import 'api_client.dart'; // 👈 central HTTP client (adds JWT + auto-logout on 401/403)
+import 'session_expired_exception.dart';
 
 class AuthService {
   static bool get useRealApi => ApiConfig.useRealApi;
@@ -42,6 +43,8 @@ class AuthService {
   static String _cleanErrorMessage(String message) {
     String cleaned = message
         .replaceFirst('Exception: ', '')
+        .replaceAll(RegExp(r'[\uFEFF\u200B\u200C\u200D\u2060]'), '')
+        .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '')
         .replaceAll('"', '')
         .replaceAll('{', '')
         .replaceAll('}', '')
@@ -85,6 +88,12 @@ class AuthService {
       cleaned = 'Please verify your email first. Check your inbox for OTP.';
     } else if (cleaned.toLowerCase().contains('suspended')) {
     cleaned = 'Your account has been suspended. Please contact support at tutr.verify@gmail.com';
+    } else if (cleaned.toLowerCase().contains('permanently disabled') ||
+        cleaned.toLowerCase().contains('policy violation') ||
+        cleaned.toLowerCase().contains('banned')) {
+      cleaned = 'This account has been permanently disabled due to policy violations.';
+    } else if (cleaned.toLowerCase().contains('rejected')) {
+    cleaned = 'Your documents were rejected. Please re-upload.';
     }
     cleaned = cleaned.replaceAll(RegExp(r'[^a-zA-Z0-9\s\.]'), '').trim();
 
@@ -649,6 +658,8 @@ class AuthService {
           final errorData = response.body.isNotEmpty ? json.decode(response.body) : {};
           throw Exception(_cleanErrorMessage(errorData['error'] ?? 'Failed to load profile'));
         }
+      } on SessionExpiredException {
+        rethrow;
       } catch (e) {
         throw Exception(_cleanErrorMessage(e.toString()));
       }
@@ -690,6 +701,8 @@ class AuthService {
           final errorData = response.body.isNotEmpty ? json.decode(response.body) : {};
           throw Exception(_cleanErrorMessage(errorData['error'] ?? 'Failed to update profile'));
         }
+      } on SessionExpiredException {
+        rethrow;
       } catch (e) {
         throw Exception(_cleanErrorMessage(e.toString()));
       }
@@ -735,12 +748,37 @@ class AuthService {
         } else {
           throw Exception('Failed to upload image');
         }
+      } on SessionExpiredException {
+        rethrow;
       } catch (e) {
         throw Exception(_cleanErrorMessage(e.toString()));
       }
     } else {
       await Future.delayed(const Duration(seconds: 1));
       return {'profilePictureUrl': '/uploads/mock-image.jpg'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getDocumentsByUser(int userId) async {
+    if (useRealApi) {
+      try {
+        final response = await ApiClient.get(
+          Uri.parse('${ApiConfig.baseUrl}/api/documents/user/$userId'),
+        );
+
+        if (response.statusCode == 200) {
+          return json.decode(response.body);
+        } else if (response.statusCode == 404) {
+          return {}; // no documents found
+        } else {
+          throw Exception('Failed to load documents');
+        }
+      } catch (e) {
+        throw Exception(_cleanErrorMessage(e.toString()));
+      }
+    } else {
+      await Future.delayed(const Duration(seconds: 1));
+      return {};
     }
   }
 

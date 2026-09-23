@@ -10,11 +10,13 @@ import '../widgets/registration_deadline_banner.dart';
 class TutorVerificationScreen extends StatefulWidget {
   final int userId;
   final DateTime? createdAt;
+  final bool isResubmission;
 
   const TutorVerificationScreen({
     super.key,
     required this.userId,
     this.createdAt,
+    this.isResubmission = false,   // ✅ default false
   });
 
   @override
@@ -29,19 +31,39 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
   bool _showErrors = false;
   bool _isLoading = false;
 
+  // ✅ NEW — previous rejection reason (only on re-submission)
+  String? _rejectionReason;
+
   @override
   void initState() {
     super.initState();
 
-    //  Show the registration deadline popup once
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.createdAt != null) {
+    // ✅ Only show deadline popup on FIRST upload
+    if (!widget.isResubmission && widget.createdAt != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         RegistrationDeadlinePopup.show(
           context,
-          createdAt: widget.createdAt,
+          createdAt: widget.createdAt!,
         );
+      });
+    }
+
+    // ✅ Fetch rejection reason for re-submissions
+    if (widget.isResubmission) {
+      _loadRejectionReason();
+    }
+  }
+
+  Future<void> _loadRejectionReason() async {
+    try {
+      final docs = await AuthService.getDocumentsByUser(widget.userId);
+      final reason = docs['rejectionReason'];
+      if (mounted && reason != null && reason.toString().isNotEmpty) {
+        setState(() => _rejectionReason = reason.toString());
       }
-    });
+    } catch (e) {
+      debugPrint('Failed to load rejection reason: $e');
+    }
   }
 
   Future<void> _pickFile(String type) async {
@@ -140,35 +162,72 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
         return Dialog(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(30),
+          ),
           child: Padding(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  height: 120,
-                  width: 120,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    image: DecorationImage(
-                      image: AssetImage('assets/images/success_user.png'),
-                      fit: BoxFit.cover,
+                // ---- Centered image ----
+                Center(
+                  child: Container(
+                    height: 120,
+                    width: 120,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      image: DecorationImage(
+                        image: AssetImage('assets/images/success_user.png'),
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  "Documents Submitted!",
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+
+                // ---- Centered heading ----
+                Center(
+                  child: Text(
+                    widget.isResubmission
+                        ? "Documents Resubmitted!"
+                        : "Documents Submitted!",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0D1B3E),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 15),
-                const Text(
-                  "Your documents have been submitted successfully. We're reviewing them and will notify you once approved.",
-                  textAlign: TextAlign.center,
+
+                // ---- Centered body text ----
+                Center(
+                  child: Text(
+                    widget.isResubmission
+                        ? "Your new documents have been submitted. We'll review them and notify you once approved."
+                        : "Your documents have been submitted successfully. We're reviewing them and will notify you once approved.",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.black54,
+                      height: 1.5,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 30),
-                const CircularProgressIndicator(color: Color(0xFF0D1B3E)),
+
+                // ---- Centered spinner ----
+                const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF0D1B3E),
+                    strokeWidth: 3,
+                  ),
+                ),
               ],
             ),
           ),
@@ -195,7 +254,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
         children: [
           Column(
             children: [
-              // Header with shadow
               Container(
                 width: double.infinity,
                 height: 120,
@@ -205,7 +263,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                     bottomLeft: Radius.circular(30),
                     bottomRight: Radius.circular(30),
                   ),
-                  // Added shadow
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
@@ -221,13 +278,25 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                       alignment: Alignment.centerLeft,
                       child: GestureDetector(
                         onTap: () {
+                          // On re-submission, go back to login
+                          if (widget.isResubmission) {
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const LoginScreen(),
+                              ),
+                                  (route) => false,
+                            );
+                            return;
+                          }
+                          // On first-time, go back to profile creation
                           Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
                               builder: (context) => ProfileCreationScreen(
                                 role: 'TUTOR',
                                 userId: widget.userId,
-                                createdAt: widget.createdAt, // 👈 pass back so it stays consistent
+                                createdAt: widget.createdAt,
                               ),
                             ),
                           );
@@ -249,15 +318,72 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                     children: [
                       const SizedBox(height: 40),
 
-                      const Text(
-                        "Verify Your Identity",
-                        style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                      Text(
+                        widget.isResubmission
+                            ? "Re-Upload Documents"
+                            : "Verify Your Identity",
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 12),
-                      const Text(
-                        "To maintain a safe and trusted learning environment, all tutors are required to complete identity verification before starting.",
-                        style: TextStyle(color: Colors.grey),
+                      Text(
+                        widget.isResubmission
+                            ? "Your previous submission was rejected. Please review the reason below and upload corrected documents."
+                            : "To maintain a safe and trusted learning environment, all tutors are required to complete identity verification before starting.",
+                        style: const TextStyle(color: Colors.grey),
                       ),
+
+                      // ✅ Rejection reason banner
+                      if (_rejectionReason != null) ...[
+                        const SizedBox(height: 24),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            border: Border.all(color: const Color(0xFFFCD34D)),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                color: Color(0xFFD97706),
+                                size: 22,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      "Previous Submission Rejected",
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF92400E),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _rejectionReason!,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF78350F),
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 40),
                       _buildUploadField(
                         label: _idFileName ?? "+ Identity Card (ID)",
@@ -319,9 +445,11 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                                 strokeWidth: 2,
                               ),
                             )
-                                : const Text(
-                              "Submit",
-                              style: TextStyle(
+                                : Text(
+                              widget.isResubmission
+                                  ? "Resubmit"
+                                  : "Submit",
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
