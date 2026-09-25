@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'login_screen.dart';
 import 'profile_creation_screen.dart';
 import '../services/auth_service.dart';
@@ -16,7 +17,7 @@ class TutorVerificationScreen extends StatefulWidget {
     super.key,
     required this.userId,
     this.createdAt,
-    this.isResubmission = false,   // ✅ default false
+    this.isResubmission = false,
   });
 
   @override
@@ -31,14 +32,14 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
   bool _showErrors = false;
   bool _isLoading = false;
 
-  // ✅ NEW — previous rejection reason (only on re-submission)
   String? _rejectionReason;
+
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
 
-    // ✅ Only show deadline popup on FIRST upload
     if (!widget.isResubmission && widget.createdAt != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         RegistrationDeadlinePopup.show(
@@ -48,7 +49,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
       });
     }
 
-    // ✅ Fetch rejection reason for re-submissions
     if (widget.isResubmission) {
       _loadRejectionReason();
     }
@@ -66,6 +66,132 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
     }
   }
 
+  // ============================================================
+  // ✅ Source picker: Files or Camera
+  // ============================================================
+  Future<void> _showSourcePicker(String type) async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle bar
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+
+                Text(
+                  'Upload Document',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0D1B3E),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Choose how you want to provide the document',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 20),
+
+                // Files option
+                _buildSourceTile(
+                  icon: Icons.folder_outlined,
+                  title: 'Choose from Files',
+                  subtitle: 'Pick a PDF or image from your device',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _pickFile(type);
+                  },
+                ),
+
+                // Camera option
+                _buildSourceTile(
+                  icon: Icons.camera_alt_outlined,
+                  title: 'Take Photo',
+                  subtitle: 'Capture the document with your camera',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _pickFromCamera(type);
+                  },
+                ),
+
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSourceTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: Colors.black87, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0D1B3E),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // PICK FROM FILES (existing)
+  // ============================================================
   Future<void> _pickFile(String type) async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -82,6 +208,42 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
           _degreeFile = File(result.files.single.path!);
         }
       });
+    }
+  }
+
+  // ============================================================
+  // ✅ PICK FROM CAMERA (new)
+  // ============================================================
+  Future<void> _pickFromCamera(String type) async {
+    try {
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 2000,
+        maxHeight: 2000,
+      );
+
+      if (photo == null) return; // user cancelled
+
+      final file = File(photo.path);
+      final fileName = photo.name;
+
+      setState(() {
+        if (type == "ID") {
+          _idFileName = fileName;
+          _idFile = file;
+        } else {
+          _degreeFileName = fileName;
+          _degreeFile = file;
+        }
+      });
+    } catch (e) {
+      debugPrint('Camera capture failed: $e');
+      if (mounted) {
+        _showErrorPopup(
+          'Could not access camera. Please check permissions and try again.',
+        );
+      }
     }
   }
 
@@ -110,15 +272,10 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
           Center(
             child: TextButton(
               onPressed: () => Navigator.pop(context),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.black,
-              ),
+              style: TextButton.styleFrom(foregroundColor: Colors.black),
               child: const Text(
                 "OK",
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -146,7 +303,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
       if (!mounted) return;
       setState(() => _isLoading = false);
       _showSuccessPopup();
-
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -163,9 +319,7 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
             child: Column(
@@ -173,7 +327,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ---- Centered image ----
                 Center(
                   child: Container(
                     height: 120,
@@ -188,8 +341,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // ---- Centered heading ----
                 Center(
                   child: Text(
                     widget.isResubmission
@@ -204,8 +355,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                   ),
                 ),
                 const SizedBox(height: 15),
-
-                // ---- Centered body text ----
                 Center(
                   child: Text(
                     widget.isResubmission
@@ -220,8 +369,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                   ),
                 ),
                 const SizedBox(height: 30),
-
-                // ---- Centered spinner ----
                 const Center(
                   child: CircularProgressIndicator(
                     color: Color(0xFF0D1B3E),
@@ -278,7 +425,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                       alignment: Alignment.centerLeft,
                       child: GestureDetector(
                         onTap: () {
-                          // On re-submission, go back to login
                           if (widget.isResubmission) {
                             Navigator.pushAndRemoveUntil(
                               context,
@@ -289,7 +435,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                             );
                             return;
                           }
-                          // On first-time, go back to profile creation
                           Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
@@ -335,7 +480,6 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                         style: const TextStyle(color: Colors.grey),
                       ),
 
-                      // ✅ Rejection reason banner
                       if (_rejectionReason != null) ...[
                         const SizedBox(height: 24),
                         Container(
@@ -387,13 +531,13 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                       const SizedBox(height: 40),
                       _buildUploadField(
                         label: _idFileName ?? "+ Identity Card (ID)",
-                        onTap: () => _pickFile("ID"),
+                        onTap: () => _showSourcePicker("ID"),
                         isUploaded: _idFileName != null,
                       ),
                       const SizedBox(height: 20),
                       _buildUploadField(
                         label: _degreeFileName ?? "+ Degree / Certificate",
-                        onTap: () => _pickFile("Degree"),
+                        onTap: () => _showSourcePicker("Degree"),
                         isUploaded: _degreeFileName != null,
                       ),
                       const SizedBox(height: 100),
@@ -409,7 +553,9 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                                 fontFamily: 'sans-serif',
                               ),
                               children: [
-                                const TextSpan(text: "By clicking Submit, you agree to our "),
+                                const TextSpan(
+                                    text:
+                                    "By clicking Submit, you agree to our "),
                                 TextSpan(
                                   text: "identity verification process",
                                   style: TextStyle(
@@ -418,7 +564,8 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                                   ),
                                 ),
                                 const TextSpan(
-                                  text: " and confirm that all provided information is correct and complete.",
+                                  text:
+                                  " and confirm that all provided information is correct and complete.",
                                 ),
                               ],
                             ),
@@ -512,13 +659,17 @@ class _TutorVerificationScreenState extends State<TutorVerificationScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 16,
-                  color: isUploaded ? Colors.black : (_showErrors ? Colors.red : Colors.grey),
+                  color: isUploaded
+                      ? Colors.black
+                      : (_showErrors ? Colors.red : Colors.grey),
                 ),
               ),
             ),
             Icon(
               isUploaded ? Icons.check_circle : Icons.note_add_outlined,
-              color: isUploaded ? Colors.green : (_showErrors ? Colors.red : Colors.black),
+              color: isUploaded
+                  ? Colors.green
+                  : (_showErrors ? Colors.red : Colors.black),
             ),
           ],
         ),
