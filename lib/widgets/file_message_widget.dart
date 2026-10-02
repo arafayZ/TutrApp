@@ -45,12 +45,92 @@ class FileMessageWidget extends StatelessWidget {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
+  // ✅ Long-press menu
+  void _showFileMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (modalContext) => SafeArea(
+        child: Wrap(
+          children: [
+            // ── Save to Downloads ──
+            ListTile(
+              leading: const Icon(Icons.file_download_outlined),
+              title: const Text('Save to Downloads'),
+              onTap: () async {
+                Navigator.pop(modalContext);
+
+                // Show progress snackbar
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text('Saving...'),
+                      ],
+                    ),
+                    duration: Duration(minutes: 2),
+                    backgroundColor: Colors.black87,
+                  ),
+                );
+
+                final ok = await FileOpenerService.saveFileToDownloads(
+                  fileUrl,
+                  fileName,
+                );
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        ok
+                            ? 'Saved to Downloads/Tutr'
+                            : 'Failed to save file',
+                      ),
+                      backgroundColor: ok ? Colors.green : Colors.red,
+                    ),
+                  );
+                }
+              },
+            ),
+
+            // ── Open ──
+            ListTile(
+              leading: const Icon(Icons.open_in_new),
+              title: const Text('Open'),
+              onTap: () {
+                Navigator.pop(modalContext);
+                FileOpenerService.openFileFromUrl(
+                  context,
+                  fileUrl: fileUrl,
+                  fileName: fileName,
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final textColor = isMe ? Colors.white : Colors.black87;
 
     return GestureDetector(
-      // ✅ Tap to open
+      // ✅ Tap → open
       onTap: () {
         FileOpenerService.openFileFromUrl(
           context,
@@ -58,6 +138,8 @@ class FileMessageWidget extends StatelessWidget {
           fileName: fileName,
         );
       },
+      // ✅ Long-press → menu
+      onLongPress: () => _showFileMenu(context),
       child: Container(
         padding: const EdgeInsets.all(10),
         constraints: const BoxConstraints(minWidth: 200, maxWidth: 240),
@@ -108,7 +190,6 @@ class FileMessageWidget extends StatelessWidget {
                 ],
               ),
             ),
-
           ],
         ),
       ),

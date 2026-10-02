@@ -1,10 +1,14 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
+import 'package:saver_gallery/saver_gallery.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/api_config.dart';
+import 'api_client.dart';
 import 'api_headers.dart';
 
 class FileOpenerService {
@@ -70,6 +74,165 @@ class FileOpenerService {
     }
   }
 
+  // ============================================================
+// SAVE FILE TO DOWNLOADS FOLDER (user-visible)
+// ============================================================
+  static Future<bool> saveFileToDownloads(
+      String fileUrl,
+      String fileName,
+      ) async {
+    try {
+      // ─── 1. Android < 11 permission (API <= 29) ───
+      if (Platform.isAndroid) {
+        // On Android 11+ this permission is auto-granted for Downloads folder.
+        // On Android 10 and below, we need to request it.
+        if (await Permission.storage.isDenied) {
+          final status = await Permission.storage.request();
+          if (status.isDenied || status.isPermanentlyDenied) {
+            debugPrint('❌ Storage permission denied');
+            return false;
+          }
+        }
+      }
+
+      // ─── 2. Decide destination directory ───
+      Directory? targetDir;
+      if (Platform.isAndroid) {
+        // Visible in Files app → Downloads/Tutr
+        targetDir = Directory('/storage/emulated/0/Download/Tutr');
+      } else if (Platform.isIOS) {
+        // iOS has no Downloads — use app Documents (visible in Files app)
+        targetDir = await getApplicationDocumentsDirectory();
+      } else {
+        targetDir = await getDownloadsDirectory();
+      }
+
+      if (targetDir == null) {
+        debugPrint('❌ Could not resolve downloads directory');
+        return false;
+      }
+
+      // ─── 3. Ensure folder exists ───
+      if (!await targetDir.exists()) {
+        await targetDir.create(recursive: true);
+      }
+
+      final targetFile = File('${targetDir.path}/$fileName');
+
+      // ─── 4. Skip if already saved (no duplicates) ───
+      if (await targetFile.exists()) {
+        debugPrint('⏭️ Already saved: ${targetFile.path}');
+        return true;
+      }
+
+      // ─── 5. Download with auth + ngrok headers ───
+      final fullUrl = fileUrl.startsWith('http')
+          ? fileUrl
+          : '${ApiConfig.baseUrl}$fileUrl';
+
+      final headers = await ApiClient.mediaDownloadHeaders();
+      final response = await http.get(
+        Uri.parse(fullUrl),
+        headers: headers,
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint('❌ Download failed: ${response.statusCode}');
+        return false;
+      }
+
+      // ─── 6. Write to disk ───
+      await targetFile.writeAsBytes(response.bodyBytes);
+      debugPrint('✅ Saved to ${targetFile.path}');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Save failed: $e');
+      return false;
+    }
+  }
+
+  // ============================================================
+// SAVE IMAGE / VIDEO TO GALLERY (album: "Tutr")
+// Works with saver_gallery: ^4.1.2
+// ============================================================
+  static Future<bool> saveToGallery({
+    required String fileUrl,
+    required String fileName,
+    required bool isVideo,
+  }) async {
+    try {
+      if (Platform.isAndroid) {
+        final status = await Permission.storage.request();
+
+        if (status.isPermanentlyDenied) {
+          return false;
+        }
+      }
+
+      final fullUrl = fileUrl.startsWith('http')
+          ? fileUrl
+          : '${ApiConfig.baseUrl}$fileUrl';
+
+      final headers = await ApiClient.mediaDownloadHeaders();
+
+      final response = await http.get(
+        Uri.parse(fullUrl),
+        headers: headers,
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint('❌ Download failed: ${response.statusCode}');
+        return false;
+      }
+
+      final androidAlbumPath =
+      isVideo ? 'Movies/Tutr' : 'Pictures/Tutr';
+
+      SaveResult result;
+
+      if (isVideo) {
+        final tempDir = await getTemporaryDirectory();
+
+        final tempFile = File(
+          '${tempDir.path}/$fileName',
+        );
+
+        await tempFile.writeAsBytes(
+          response.bodyBytes,
+        );
+
+        result = await SaverGallery.saveFile(
+          filePath: tempFile.path,
+          fileName: fileName,
+          androidRelativePath: androidAlbumPath,
+          skipIfExists: true,
+        );
+
+        try {
+          await tempFile.delete();
+        } catch (_) {}
+      } else {
+        result = await SaverGallery.saveImage(
+          response.bodyBytes,
+          quality: 100,
+          fileName: fileName,
+          androidRelativePath: androidAlbumPath,
+          skipIfExists: true,
+        );
+      }
+
+      debugPrint(
+        '📸 Save result: isSuccess=${result.isSuccess}, '
+            'errorMessage=${result.errorMessage}',
+      );
+
+      return result.isSuccess;
+    } catch (e) {
+      debugPrint('❌ Save to gallery failed: $e');
+      return false;
+    }
+  }
+
   /// ✅ Open image in fullscreen viewer
   static void openImageViewer(
       BuildContext context, {
@@ -126,6 +289,8 @@ class FileOpenerService {
     );
   }
 }
+
+
 
 /// ✅ Fullscreen image viewer
 class _FullScreenImage extends StatelessWidget {

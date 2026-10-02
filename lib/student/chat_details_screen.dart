@@ -9,6 +9,8 @@ import 'package:video_player/video_player.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/chat_service.dart';
 import '../services/notification_api_service.dart';
 import '../services/notification_service.dart';
@@ -846,6 +848,27 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
     });
   }
 
+  Future<void> _copySelectedMessage() async {
+    if (_selectedMessageIds.length != 1) return;
+
+    final id = _selectedMessageIds.first;
+    final message = _messages.firstWhere((m) => m.id == id);
+
+    await Clipboard.setData(ClipboardData(text: message.content));
+
+    // Exit selection mode
+    _cancelSelection();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Copied to clipboard'),
+        duration: Duration(seconds: 2),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
   void _replyToSelectedMessage() {
     if (_selectedMessageIds.length != 1) return;
 
@@ -1169,6 +1192,17 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
       final count = _selectedMessageIds.length;
       final canReply = count == 1;
 
+      // ✅ Can copy only when exactly ONE text message is selected
+      final selectedMsgs = _messages
+          .where((m) => _selectedMessageIds.contains(m.id))
+          .toList();
+      final canCopy = selectedMsgs.length == 1 &&
+          (selectedMsgs.first.fileUrl == null ||
+              selectedMsgs.first.fileUrl!.isEmpty) &&
+          (selectedMsgs.first.audioUrl == null ||
+              selectedMsgs.first.audioUrl!.isEmpty) &&
+          selectedMsgs.first.content.trim().isNotEmpty;
+
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
@@ -1203,7 +1237,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
             const SizedBox(width: 15),
             Expanded(
               child: Text(
-                '$count message${count > 1 ? 's' : ''} selected',
+                count == 1 ? '1 selected' : '$count selected',
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -1211,6 +1245,15 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
                 ),
               ),
             ),
+
+            // ✅ NEW — Copy icon (only when one text message selected)
+            if (canCopy)
+              IconButton(
+                icon: const Icon(Icons.copy, color: Colors.white, size: 24),
+                onPressed: _copySelectedMessage,
+                tooltip: 'Copy',
+              ),
+
             if (canReply)
               IconButton(
                 icon: const Icon(Icons.reply, color: Colors.white, size: 26),
@@ -1490,11 +1533,22 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
                               isMe: isMe,
                             )
                           else
-                            Text(
-                              message.content,
+                            Linkify(
+                              onOpen: (link) async {
+                                final uri = Uri.tryParse(link.url);
+                                if (uri != null && await canLaunchUrl(uri)) {
+                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                }
+                              },
+                              text: message.content,
                               style: TextStyle(
                                 color: isMe ? Colors.white : Colors.black87,
                                 fontSize: 15,
+                              ),
+                              linkStyle: TextStyle(
+                                color: isMe ? Colors.lightBlueAccent : Colors.blue,
+                                decoration: TextDecoration.underline,
+                                decorationColor: isMe ? Colors.lightBlueAccent : Colors.blue,
                               ),
                             ),
                     ],

@@ -10,8 +10,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../config/api_config.dart';
-import '../models/chat_models.dart';           // ✅ NEW — for MessageStatus
+import '../models/chat_models.dart';
 import '../services/api_client.dart';
+import '../services/file_opener_service.dart';   // ✅ NEW
 
 // ============================================================
 // CHAT BUBBLE — thumbnail + play button
@@ -19,13 +20,13 @@ import '../services/api_client.dart';
 class VideoMessageWidget extends StatefulWidget {
   final String videoUrl;
   final bool isMe;
-  final MessageStatus? localStatus;            // ✅ NEW — optional
+  final MessageStatus? localStatus;
 
   const VideoMessageWidget({
     super.key,
     required this.videoUrl,
     required this.isMe,
-    this.localStatus,                          // ✅ NEW
+    this.localStatus,
   });
 
   @override
@@ -92,7 +93,6 @@ class _VideoMessageWidgetState extends State<VideoMessageWidget> {
   }
 
   void _openFullScreen() async {
-    // Don't open while still uploading
     if (_isUploading) return;
 
     final headers = await ApiClient.videoHeaders();
@@ -108,10 +108,85 @@ class _VideoMessageWidgetState extends State<VideoMessageWidget> {
     );
   }
 
+  // ✅ NEW — Long-press menu
+  void _showVideoMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (modalContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.download_outlined),
+              title: const Text('Save to Gallery'),
+              subtitle: const Text('Album: Tutr'),
+              onTap: () async {
+                Navigator.pop(modalContext);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text('Saving to gallery...'),
+                      ],
+                    ),
+                    duration: Duration(minutes: 2),
+                    backgroundColor: Colors.black87,
+                  ),
+                );
+
+                final fileName = widget.videoUrl.split('/').last;
+                final ok = await FileOpenerService.saveToGallery(
+                  fileUrl: widget.videoUrl,
+                  fileName: fileName,
+                  isVideo: true,
+                );
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        ok ? 'Saved to Gallery → Tutr' : 'Failed to save',
+                      ),
+                      backgroundColor: ok ? Colors.green : Colors.red,
+                    ),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.play_circle_outline),
+              title: const Text('Play'),
+              onTap: () {
+                Navigator.pop(modalContext);
+                _openFullScreen();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: _openFullScreen,
+      // ✅ NEW — Long-press → menu
+      onLongPress: () => _showVideoMenu(context),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Container(
@@ -144,7 +219,6 @@ class _VideoMessageWidgetState extends State<VideoMessageWidget> {
 
               Container(color: Colors.black.withValues(alpha: 0.25)),
 
-              // Play button (hidden while uploading)
               if (!_isUploading)
                 Container(
                   width: 56,
@@ -160,7 +234,6 @@ class _VideoMessageWidgetState extends State<VideoMessageWidget> {
                   ),
                 ),
 
-              // ✅ NEW — Upload overlay with spinner + label
               if (_isUploading)
                 Positioned.fill(
                   child: Container(
@@ -192,7 +265,6 @@ class _VideoMessageWidgetState extends State<VideoMessageWidget> {
                   ),
                 ),
 
-              // ✅ NEW — Failed overlay
               if (widget.localStatus == MessageStatus.failed)
                 Positioned.fill(
                   child: Container(
@@ -219,7 +291,6 @@ class _VideoMessageWidgetState extends State<VideoMessageWidget> {
                   ),
                 ),
 
-              // "Video" badge (only when done)
               if (!_isUploading)
                 Positioned(
                   bottom: 6,
