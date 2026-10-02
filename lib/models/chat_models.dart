@@ -1,4 +1,19 @@
 // lib/models/chat_models.dart
+
+// ============================================================
+// MESSAGE STATUS (for optimistic UI)
+// ============================================================
+enum MessageStatus {
+  sending,    // local: added to list, not yet uploaded
+  uploading,  // local: file upload in progress
+  sent,       // backend confirmed, delivered to server
+  delivered,  // (optional) recipient confirmed — future
+  failed,     // local: upload/send failed
+}
+
+// ============================================================
+// CHAT ROOM
+// ============================================================
 class ChatRoom {
   final int id;
   final String roomId;
@@ -53,7 +68,9 @@ class ChatRoom {
       tutorImage: json['tutorImage'],
       courseName: json['courseName'] ?? '',
       lastMessage: json['lastMessage'],
-      lastMessageAt: json['lastMessageAt'] != null ? DateTime.parse(json['lastMessageAt']) : null,
+      lastMessageAt: json['lastMessageAt'] != null
+          ? DateTime.parse(json['lastMessageAt'])
+          : null,
       unreadCount: json['unreadCount'] ?? 0,
       isActive: json['active'] ?? true,
       createdAt: DateTime.parse(json['createdAt']),
@@ -61,6 +78,9 @@ class ChatRoom {
   }
 }
 
+// ============================================================
+// MESSAGE
+// ============================================================
 class Message {
   final int id;
   final int chatRoomId;
@@ -84,6 +104,9 @@ class Message {
   final String? replyToSenderName;
   final String? replyToMessageType;
 
+  // ✅ Local-only status — does NOT come from backend
+  MessageStatus localStatus;
+
   Message({
     required this.id,
     required this.chatRoomId,
@@ -106,6 +129,7 @@ class Message {
     this.replyToContent,
     this.replyToSenderName,
     this.replyToMessageType,
+    this.localStatus = MessageStatus.sent,   // ✅ default: received messages are 'sent'
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -118,7 +142,9 @@ class Message {
       recipientId: json['recipientId'] ?? 0,
       content: json['content'] ?? '',
       messageType: json['messageType'] ?? 'TEXT',
-      sentAt: json['sentAt'] != null ? DateTime.parse(json['sentAt']) : DateTime.now(),
+      sentAt: json['sentAt'] != null
+          ? DateTime.parse(json['sentAt'])
+          : DateTime.now(),
       isRead: json['read'] ?? false,
       isOwn: json['own'] ?? false,
       audioUrl: json['audioUrl'],
@@ -131,10 +157,61 @@ class Message {
       replyToContent: json['replyToContent'],
       replyToSenderName: json['replyToSenderName'],
       replyToMessageType: json['replyToMessageType'],
+      localStatus: MessageStatus.sent,       // ✅ backend messages are always 'sent'
     );
   }
+
+  /// ✅ Optimistic factory — used when the user sends a message/file
+  /// before the backend has confirmed it.
+  ///
+  /// IMPORTANT: pass a **negative** id (e.g. -DateTime.now().millisecondsSinceEpoch)
+  /// so it can't clash with real backend IDs, which are always positive.
+  factory Message.optimistic({
+    required int id,
+    required int chatRoomId,
+    required int senderId,
+    required String senderName,
+    required int recipientId,
+    required String content,
+    String? fileUrl,
+    String? fileName,
+    int? fileSize,
+    String? fileType,
+    int? audioDuration,
+    int? replyToMessageId,
+    MessageStatus localStatus = MessageStatus.sending,
+  }) {
+    return Message(
+      id: id,
+      chatRoomId: chatRoomId,
+      senderId: senderId,
+      senderName: senderName,
+      recipientId: recipientId,
+      content: content,
+      sentAt: DateTime.now(),
+      fileUrl: fileUrl,
+      fileName: fileName,
+      fileSize: fileSize,
+      fileType: fileType,
+      audioDuration: audioDuration,
+      replyToMessageId: replyToMessageId,
+      isOwn: true,
+      localStatus: localStatus,
+    );
+  }
+
+  /// ✅ Convenience check for whether this message is still in-flight
+  bool get isPending =>
+      localStatus == MessageStatus.sending ||
+          localStatus == MessageStatus.uploading;
+
+  /// ✅ Whether this message failed to send
+  bool get isFailed => localStatus == MessageStatus.failed;
 }
 
+// ============================================================
+// SEND MESSAGE REQUEST
+// ============================================================
 class SendMessageRequest {
   final int chatRoomId;
   final int senderId;

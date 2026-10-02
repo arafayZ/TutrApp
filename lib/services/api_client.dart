@@ -190,7 +190,7 @@ class ApiClient {
   /// Throws SessionExpiredException on 401/403.
   static Future<http.Response> sendMultipart(
       http.MultipartRequest request, {
-        Duration timeout = const Duration(seconds: 60),
+        Duration timeout = const Duration(minutes: 10),
       }) async {
     final token = await _token();
     if (token != null) {
@@ -201,5 +201,33 @@ class ApiClient {
 
     // Use the same smart check as JSON requests
     return _check(response);
+  }
+
+  // ------------------------------------------------------------
+// VIDEO / MEDIA HEADERS
+// ------------------------------------------------------------
+
+  /// Headers for the native video_player (ExoPlayer/AVPlayer).
+  /// Cannot route through ApiClient.get(...) because video_player
+  /// uses its own HTTP stack — so we expose the header map here.
+  static Future<Map<String, String>> videoHeaders() async {
+    final token = await _token();
+    return {
+      'ngrok-skip-browser-warning': 'true',
+      'User-Agent': 'TutrMobile/1.0',
+      'Accept': 'video/*, */*',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  /// Headers for downloading media (thumbnail generation) through the
+  /// normal http client — includes ngrok bypass + auth + JSON-safe.
+  static Future<Map<String, String>> mediaDownloadHeaders() async {
+    final token = await _token();
+    return {
+      'ngrok-skip-browser-warning': 'true',
+      'User-Agent': 'TutrMobile/1.0',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
   }
 }

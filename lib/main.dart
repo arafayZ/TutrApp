@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:my_first_app/services/notification_api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:media_kit/media_kit.dart';
 
 // Importing different TUTOR screens
 import 'signup/splash_screen.dart';
@@ -72,6 +73,7 @@ Future<void> forceLogout({String? reason}) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
 
   // Initialize Firebase
   await Firebase.initializeApp();
