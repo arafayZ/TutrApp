@@ -126,9 +126,43 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
       }
 
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isSubmitting = false);
-      _showErrorDialog(e.toString().replaceFirst('Exception: ', ''));
+
+      final rawMessage = e.toString().replaceFirst('Exception: ', '').trim();
+      final lower = rawMessage.toLowerCase();
+
+      //  Connection-related failures → snackbar (not dialog)
+      final isConnectionError = lower.contains('connected with') ||
+          lower.contains('connection') ||
+          lower.contains('confirmed or completed');
+
+      if (isConnectionError) {
+        _showConnectionSnackBar(
+          'You can only review a tutor you have connected with.',
+        );
+      } else {
+        _showErrorDialog(rawMessage);
+      }
     }
+  }
+
+  void _showConnectionSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(fontSize: 13),
+        ),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
   }
 
   void _showErrorDialog(String message) {
