@@ -132,14 +132,19 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
       final rawMessage = e.toString().replaceFirst('Exception: ', '').trim();
       final lower = rawMessage.toLowerCase();
 
-      //  Connection-related failures → snackbar (not dialog)
+      // ✅ Already reviewed → snackbar
+      final isDuplicate = lower.contains('already rated') ||
+          lower.contains('already reviewed');
+
+      //  Connection-related → snackbar
       final isConnectionError = lower.contains('connected with') ||
-          lower.contains('connection') ||
           lower.contains('confirmed or completed');
 
-      if (isConnectionError) {
-        _showConnectionSnackBar(
-          'You can only review a tutor you have connected with.',
+      if (isDuplicate) {
+        _showErrorSnackBar('You have already reviewed this course.');
+      } else if (isConnectionError) {
+        _showErrorSnackBar(
+          'You need a confirmed connection for this course to leave a review.',
         );
       } else {
         _showErrorDialog(rawMessage);
@@ -147,7 +152,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
     }
   }
 
-  void _showConnectionSnackBar(String message) {
+  void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
