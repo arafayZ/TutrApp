@@ -28,6 +28,9 @@ import '../widgets/reply_preview_widget.dart';
 import '../widgets/forward_picker_sheet.dart';
 import '../services/chat_exceptions.dart';
 import '../widgets/video_message_widget.dart';
+import '../widgets/location_message_widget.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class StudentChatDetailsScreen extends StatefulWidget {
   final String userName;
@@ -439,6 +442,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
       onDocument: _pickDocument,
       onGallery: _pickFromGallery,
       onCamera: _pickFromCamera,
+      onLocation: _sendLocation,
     );
   }
 
@@ -701,6 +705,89 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
   }
 
   // ============================================
+  // LOCATION MESSAGE
+  // ============================================
+  Future<void> _sendLocation() async {
+    if (_chatRoomId == 0 || _recipientId == 0) return;
+
+    try {
+      var status = await Permission.locationWhenInUse.status;
+      if (!status.isGranted) {
+        status = await Permission.locationWhenInUse.request();
+      }
+      if (!status.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location permission denied'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please enable location services'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() => _isSending = true);
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      ).timeout(const Duration(seconds: 10));
+
+      final request = SendMessageRequest(
+        chatRoomId: _chatRoomId,
+        senderId: _senderId,
+        recipientId: _recipientId,
+        content: '📍 My location',
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        replyToMessageId: _replyingTo?.id,
+      );
+
+      final message = await ChatService.sendMessage(request);
+
+      setState(() {
+        if (!_messageIds.contains(message.id)) {
+          _messageIds.add(message.id);
+          _messages.add(message);
+        }
+        _isSending = false;
+        _replyingTo = null;
+      });
+
+      WebSocketService.instance.sendMessage(message);
+
+      final unreadCount = await ChatService.getUnreadCount(_senderId);
+      UnreadCountService().updateUnreadCount(unreadCount);
+
+      _scrollToBottom();
+    } catch (e) {
+      debugPrint('❌ Error sending location: $e');
+      if (mounted) {
+        setState(() => _isSending = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to send location'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ============================================
   // SEND FILES — optimistic + no duplicate
   // ============================================
   Future<void> _sendPendingFiles() async {
@@ -913,7 +1000,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         title: const Text(
-          'Delete Messages',
+          'Delete for Me',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         content: Text('Delete $count message${count > 1 ? 's' : ''}?'),
@@ -925,7 +1012,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text(
-              'Delete',
+              'Delete for Me',
               style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
             ),
           ),
@@ -982,9 +1069,9 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete All Messages'),
+        title: const Text('Delete All for Me'),
         content: Text(
-          'Are you sure you want to delete all messages in this chat with ${widget.userName}?',
+          'Are you sure you want to delete all messages in this chat with ${widget.userName}for you only?',
         ),
         actions: [
           TextButton(
@@ -994,7 +1081,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete All'),
+            child: const Text('Delete All for Me'),
           ),
         ],
       ),
@@ -1353,7 +1440,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
                         color: Colors.red, size: 20),
                     SizedBox(width: 12),
                     Text(
-                      'Delete All Messages',
+                      'Delete All for Me',
                       style: TextStyle(
                         color: Colors.black87,
                         fontSize: 14,
@@ -1378,6 +1465,8 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
       ) {
     final bool isAudio =
         message.audioUrl != null && message.audioUrl!.isNotEmpty;
+    final bool isLocation =
+        message.latitude != null && message.longitude != null;
 
     final bool isVideo = message.fileUrl != null &&
         message.fileUrl!.isNotEmpty &&
@@ -1400,7 +1489,7 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
         !isImage &&
         !isVideo;
 
-    final bool isSpecial = isAudio || isImage || isVideo || isFile;
+    final bool isSpecial = isAudio || isImage || isVideo || isFile || isLocation;
     final bool hasReply = message.replyToMessageId != null;
 
     return Container(
@@ -1506,7 +1595,13 @@ class _StudentChatDetailsScreenState extends State<StudentChatDetailsScreen> {
                             ),
                           ),
                         ),
-                      if (isAudio)
+                      if (isLocation)
+                        LocationMessageWidget(
+                          latitude: message.latitude!,
+                          longitude: message.longitude!,
+                          isMe: isMe,
+                        )
+                      else if (isAudio)
                         AudioPlayerWidget(
                           audioUrl: message.audioUrl!,
                           isMe: isMe,

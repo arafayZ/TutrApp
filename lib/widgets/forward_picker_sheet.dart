@@ -95,6 +95,8 @@ class _ForwardPickerSheetState extends State<ForwardPickerSheet> {
             fileName: message.fileName,
             fileSize: message.fileSize,
             fileType: message.fileType,
+            latitude: message.latitude,
+            longitude: message.longitude,
           );
 
           await ChatService.sendMessage(request);

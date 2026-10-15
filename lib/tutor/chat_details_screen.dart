@@ -27,6 +27,9 @@ import '../widgets/file_preview_widget.dart';
 import '../widgets/reply_preview_widget.dart';
 import '../widgets/forward_picker_sheet.dart';
 import '../widgets/video_message_widget.dart';
+import '../widgets/location_message_widget.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class TutorChatDetailsScreen extends StatefulWidget {
   final String userName;
@@ -357,6 +360,7 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
       onDocument: _pickDocument,
       onGallery: _pickFromGallery,
       onCamera: _pickFromCamera,
+      onLocation: _sendLocation,
     );
   }
 
@@ -623,6 +627,89 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
       });
     } catch (e) {
       debugPrint('❌ Camera pick error: $e');
+    }
+  }
+
+  // ============================================
+  // LOCATION MESSAGE
+  // ============================================
+  Future<void> _sendLocation() async {
+    if (_chatRoomId == 0 || _recipientId == 0) return;
+
+    try {
+      var status = await Permission.locationWhenInUse.status;
+      if (!status.isGranted) {
+        status = await Permission.locationWhenInUse.request();
+      }
+      if (!status.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location permission denied'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please enable location services'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() => _isSending = true);
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      ).timeout(const Duration(seconds: 10));
+
+      final request = SendMessageRequest(
+        chatRoomId: _chatRoomId,
+        senderId: _senderId,
+        recipientId: _recipientId,
+        content: '📍 My location',
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        replyToMessageId: _replyingTo?.id,
+      );
+
+      final message = await ChatService.sendMessage(request);
+
+      setState(() {
+        if (!_messageIds.contains(message.id)) {
+          _messageIds.add(message.id);
+          _messages.add(message);
+        }
+        _isSending = false;
+        _replyingTo = null;
+      });
+
+      WebSocketService.instance.sendMessage(message);
+
+      final unreadCount = await ChatService.getUnreadCount(_senderId);
+      UnreadCountService().updateUnreadCount(unreadCount);
+
+      _scrollToBottom();
+    } catch (e) {
+      debugPrint('❌ Error sending location: $e');
+      if (mounted) {
+        setState(() => _isSending = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to send location'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -1261,6 +1348,8 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
       ) {
     final bool isAudio =
         message.audioUrl != null && message.audioUrl!.isNotEmpty;
+    final bool isLocation =
+        message.latitude != null && message.longitude != null;
 
     final bool isVideo = message.fileUrl != null &&
         message.fileUrl!.isNotEmpty &&
@@ -1283,7 +1372,7 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
         !isImage &&
         !isVideo;
 
-    final bool isSpecial = isAudio || isImage || isVideo || isFile;
+    final bool isSpecial = isAudio || isImage || isVideo || isFile || isLocation;
     final bool hasReply = message.replyToMessageId != null;
 
     return Container(
@@ -1389,7 +1478,13 @@ class _TutorChatDetailsScreenState extends State<TutorChatDetailsScreen> {
                             ),
                           ),
                         ),
-                      if (isAudio)
+                      if (isLocation)
+                        LocationMessageWidget(
+                          latitude: message.latitude!,
+                          longitude: message.longitude!,
+                          isMe: isMe,
+                        )
+                      else if (isAudio)
                         AudioPlayerWidget(
                           audioUrl: message.audioUrl!,
                           isMe: isMe,

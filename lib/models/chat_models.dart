@@ -104,7 +104,11 @@ class Message {
   final String? replyToSenderName;
   final String? replyToMessageType;
 
-  // ✅ Local-only status — does NOT come from backend
+  //  Location fields (nullable — null for non-location messages)
+  final double? latitude;
+  final double? longitude;
+
+  //  Local-only status — does NOT come from backend
   MessageStatus localStatus;
 
   Message({
@@ -129,7 +133,9 @@ class Message {
     this.replyToContent,
     this.replyToSenderName,
     this.replyToMessageType,
-    this.localStatus = MessageStatus.sent,   // ✅ default: received messages are 'sent'
+    this.latitude,
+    this.longitude,
+    this.localStatus = MessageStatus.sent,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -157,11 +163,13 @@ class Message {
       replyToContent: json['replyToContent'],
       replyToSenderName: json['replyToSenderName'],
       replyToMessageType: json['replyToMessageType'],
-      localStatus: MessageStatus.sent,       // ✅ backend messages are always 'sent'
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      localStatus: MessageStatus.sent,
     );
   }
 
-  /// ✅ Optimistic factory — used when the user sends a message/file
+  ///  Optimistic factory — used when the user sends a message/file
   /// before the backend has confirmed it.
   ///
   /// IMPORTANT: pass a **negative** id (e.g. -DateTime.now().millisecondsSinceEpoch)
@@ -179,6 +187,8 @@ class Message {
     String? fileType,
     int? audioDuration,
     int? replyToMessageId,
+    double? latitude,
+    double? longitude,
     MessageStatus localStatus = MessageStatus.sending,
   }) {
     return Message(
@@ -195,18 +205,19 @@ class Message {
       fileType: fileType,
       audioDuration: audioDuration,
       replyToMessageId: replyToMessageId,
+      latitude: latitude,
+      longitude: longitude,
       isOwn: true,
       localStatus: localStatus,
     );
   }
 
-  /// ✅ Convenience check for whether this message is still in-flight
+  ///  Convenience check for whether this message is still in-flight
   bool get isPending =>
       localStatus == MessageStatus.sending ||
           localStatus == MessageStatus.uploading;
-
-  /// ✅ Whether this message failed to send
   bool get isFailed => localStatus == MessageStatus.failed;
+  bool get isLocation => latitude != null && longitude != null;
 }
 
 // ============================================================
@@ -224,6 +235,8 @@ class SendMessageRequest {
   final int? fileSize;
   final String? fileType;
   final int? replyToMessageId;
+  final double? latitude;
+  final double? longitude;
 
   SendMessageRequest({
     required this.chatRoomId,
@@ -237,6 +250,8 @@ class SendMessageRequest {
     this.fileSize,
     this.fileType,
     this.replyToMessageId,
+    this.latitude,
+    this.longitude,
   });
 
   Map<String, dynamic> toJson() {
@@ -252,6 +267,8 @@ class SendMessageRequest {
       if (fileSize != null) 'fileSize': fileSize,
       if (fileType != null) 'fileType': fileType,
       if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
     };
   }
 }

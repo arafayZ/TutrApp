@@ -4,12 +4,14 @@ class AttachmentSheet extends StatelessWidget {
   final VoidCallback onDocument;
   final VoidCallback onGallery;
   final VoidCallback onCamera;
+  final VoidCallback onLocation;
 
   const AttachmentSheet({
     super.key,
     required this.onDocument,
     required this.onGallery,
     required this.onCamera,
+    required this.onLocation,
   });
 
   static Future<void> show(
@@ -17,6 +19,7 @@ class AttachmentSheet extends StatelessWidget {
         required VoidCallback onDocument,
         required VoidCallback onGallery,
         required VoidCallback onCamera,
+        required VoidCallback onLocation,
       }) {
     return showModalBottomSheet(
       context: context,
@@ -25,6 +28,7 @@ class AttachmentSheet extends StatelessWidget {
         onDocument: onDocument,
         onGallery: onGallery,
         onCamera: onCamera,
+        onLocation: onLocation,
       ),
     );
   }
@@ -51,7 +55,6 @@ class AttachmentSheet extends StatelessWidget {
           _buildOption(
             icon: Icons.insert_drive_file,
             label: 'Document',
-            color: Colors.purple,
             onTap: () {
               Navigator.pop(context);
               onDocument();
@@ -60,7 +63,6 @@ class AttachmentSheet extends StatelessWidget {
           _buildOption(
             icon: Icons.photo_library,
             label: 'Gallery',
-            color: Colors.blue,
             onTap: () {
               Navigator.pop(context);
               onGallery();
@@ -69,10 +71,17 @@ class AttachmentSheet extends StatelessWidget {
           _buildOption(
             icon: Icons.camera_alt,
             label: 'Camera',
-            color: Colors.green,
             onTap: () {
               Navigator.pop(context);
               onCamera();
+            },
+          ),
+          _buildOption(
+            icon: Icons.location_on,
+            label: 'Location',
+            onTap: () {
+              Navigator.pop(context);
+              onLocation();
             },
           ),
         ],
@@ -83,7 +92,6 @@ class AttachmentSheet extends StatelessWidget {
   Widget _buildOption({
     required IconData icon,
     required String label,
-    required Color color,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
@@ -95,10 +103,14 @@ class AttachmentSheet extends StatelessWidget {
             width: 60,
             height: 60,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
+              color: const Color(0xFFF0F0F0), // silver background
               shape: BoxShape.circle,
+              border: Border.all(
+                color: const Color(0xFFBFBFBF), // silver border
+                width: 1,
+              ),
             ),
-            child: Icon(icon, color: color, size: 28),
+            child: Icon(icon, color: Colors.black87, size: 28),
           ),
           const SizedBox(height: 8),
           Text(
